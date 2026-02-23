@@ -4,6 +4,8 @@
  */
 
 #include "qbz2_internal.h"
+#include <stdint.h>
+#include <string.h>
 
 /*---------------------------------------------*/
 /*--- Fallback O(N log(N)^2) sorting        ---*/
@@ -296,110 +298,73 @@ Bool mainGtU ( UInt32  i1,
                Int32*  budget )
 {
    Int32  k;
-   UChar  c1, c2;
    UInt16 s1, s2;
 
    AssertD ( i1 != i2, "mainGtU" );
-   /* 1 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 2 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 3 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 4 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 5 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 6 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 7 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 8 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 9 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 10 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 11 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
-   /* 12 */
-   c1 = block[i1]; c2 = block[i2];
-   if (c1 != c2) return (c1 > c2);
-   i1++; i2++;
+
+   /* Compare first 8 bytes as a single word */
+   {
+      uint64_t w1, w2;
+      memcpy(&w1, &block[i1], 8);
+      memcpy(&w2, &block[i2], 8);
+      w1 = __builtin_bswap64(w1);
+      w2 = __builtin_bswap64(w2);
+      if (w1 != w2) return (w1 > w2);
+   }
+   i1 += 8; i2 += 8;
+
+   /* Compare next 4 bytes as a single word */
+   {
+      uint32_t u1, u2;
+      memcpy(&u1, &block[i1], 4);
+      memcpy(&u2, &block[i2], 4);
+      u1 = __builtin_bswap32(u1);
+      u2 = __builtin_bswap32(u2);
+      if (u1 != u2) return (u1 > u2);
+   }
+   i1 += 4; i2 += 4;
 
    k = nblock + 8;
 
    do {
-      /* 1 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 2 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 3 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 4 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 5 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 6 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 7 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
-      /* 8 */
-      c1 = block[i1]; c2 = block[i2];
-      if (c1 != c2) return (c1 > c2);
-      s1 = quadrant[i1]; s2 = quadrant[i2];
-      if (s1 != s2) return (s1 > s2);
-      i1++; i2++;
+
+      {
+         uint64_t w1, w2;
+         memcpy(&w1, &block[i1], 8);
+         memcpy(&w2, &block[i2], 8);
+         w1 = __builtin_bswap64(w1);
+         w2 = __builtin_bswap64(w2);
+
+         if (w1 != w2) {
+            /* Find the first differing byte position */
+            int pos = __builtin_clzll(w1 ^ w2) >> 3;
+            /* Check quadrants for all positions before the differing byte */
+            { int p; for (p = 0; p < pos; p++) {
+               s1 = quadrant[i1+p]; s2 = quadrant[i2+p];
+               if (s1 != s2) return (s1 > s2);
+            }}
+            return (w1 > w2);
+         }
+
+         /* All 8 bytes equal - check all 8 quadrants */
+         s1 = quadrant[i1];   s2 = quadrant[i2];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+1]; s2 = quadrant[i2+1];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+2]; s2 = quadrant[i2+2];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+3]; s2 = quadrant[i2+3];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+4]; s2 = quadrant[i2+4];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+5]; s2 = quadrant[i2+5];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+6]; s2 = quadrant[i2+6];
+         if (s1 != s2) return (s1 > s2);
+         s1 = quadrant[i1+7]; s2 = quadrant[i2+7];
+         if (s1 != s2) return (s1 > s2);
+      }
+      i1 += 8; i2 += 8;
 
       if (i1 >= nblock) i1 -= nblock;
       if (i2 >= nblock) i2 -= nblock;
