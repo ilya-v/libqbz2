@@ -182,6 +182,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzip2_corpus.c)
     add_test(NAME bzip2_corpus_tests COMMAND test_bzip2_corpus)
 endif()
 
+# OOM (out-of-memory) regression tests using custom allocator hooks
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_oom.c)
+    add_executable(test_oom tests/test_oom.c)
+    target_link_libraries(test_oom qbz2)
+    add_test(NAME oom_tests COMMAND test_oom)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
