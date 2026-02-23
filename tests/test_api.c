@@ -39,17 +39,21 @@ TEST(compress_init_blocksize_too_high) {
 }
 
 TEST(compress_init_verbosity_negative) {
+    /* Reference libbz2 does not validate verbosity range — accepts any int */
     bz_stream strm;
     memset(&strm, 0, sizeof(strm));
     int ret = BZ2_bzCompressInit(&strm, 5, -1, 0);
-    ASSERT_EQ(ret, BZ_PARAM_ERROR);
+    ASSERT_EQ(ret, BZ_OK);
+    BZ2_bzCompressEnd(&strm);
 }
 
 TEST(compress_init_verbosity_too_high) {
+    /* Reference libbz2 does not validate verbosity range — accepts any int */
     bz_stream strm;
     memset(&strm, 0, sizeof(strm));
     int ret = BZ2_bzCompressInit(&strm, 5, 5, 0);
-    ASSERT_EQ(ret, BZ_PARAM_ERROR);
+    ASSERT_EQ(ret, BZ_OK);
+    BZ2_bzCompressEnd(&strm);
 }
 
 TEST(compress_init_workfactor_negative) {
