@@ -224,11 +224,34 @@ fi
 
 echo "  Created $(ls "$MALFORMED_DIR" | wc -l) malformed seeds"
 
+echo "=== Generating multi-block seeds (inputs exceeding block boundaries) ==="
+
+MULTIBLOCK_DIR="$CORPUS_DIR/multiblock_seeds"
+mkdir -p "$MULTIBLOCK_DIR"
+
+# Multi-block inputs for block size 1 (100KB boundary)
+python3 -c "import sys; sys.stdout.buffer.write(b'A' * 200000)" > "$MULTIBLOCK_DIR/repeat_A_200000"
+python3 -c "import os, sys; sys.stdout.buffer.write(os.urandom(100001))" > "$MULTIBLOCK_DIR/random_100001"
+python3 -c "import os, sys; sys.stdout.buffer.write(os.urandom(200000))" > "$MULTIBLOCK_DIR/random_200000"
+python3 -c "import os, sys; sys.stdout.buffer.write(os.urandom(500000))" > "$MULTIBLOCK_DIR/random_500000"
+python3 -c "import sys; sys.stdout.buffer.write(b'\\x00' * 100000)" > "$MULTIBLOCK_DIR/exactly_100k"
+python3 -c "import sys; sys.stdout.buffer.write(b'\\x00' * 99999)" > "$MULTIBLOCK_DIR/just_under_100k"
+
+# Text-like multi-block input
+python3 -c "
+import sys
+text = ('The quick brown fox jumps over the lazy dog. ' * 5800)
+sys.stdout.buffer.write(text[:260000].encode() if isinstance(text, str) else text[:260000])
+" > "$MULTIBLOCK_DIR/text_260000"
+
+echo "  Created $(ls "$MULTIBLOCK_DIR" | wc -l) multi-block seeds"
+
 echo ""
 echo "=== Corpus summary ==="
 echo "  Compression seeds:   $(ls "$COMPRESS_DIR" | wc -l) files"
 echo "  Decompression seeds: $(ls "$DECOMPRESS_DIR" | wc -l) files"
 echo "  Malformed seeds:     $(ls "$MALFORMED_DIR" | wc -l) files"
+echo "  Multi-block seeds:   $(ls "$MULTIBLOCK_DIR" | wc -l) files"
 echo "  Total:               $(find "$CORPUS_DIR" -type f | wc -l) files"
 echo "  Total size:          $(du -sh "$CORPUS_DIR" | cut -f1)"
 echo ""

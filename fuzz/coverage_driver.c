@@ -101,6 +101,94 @@ static void exercise_streaming_decompress(const unsigned char *data, size_t size
     }
 }
 
+static void exercise_fileio_write_read(const unsigned char *data, size_t size) {
+    /* Write compressed data via FILE* API, then read it back */
+    for (int bs = 1; bs <= 9; bs += 4) {
+        char tmppath[256];
+        snprintf(tmppath, sizeof(tmppath), "/tmp/cov_bz2_test_%d.bz2", bs);
+
+        /* Write */
+        FILE *fw = fopen(tmppath, "wb");
+        if (!fw) continue;
+        int bzerr;
+        BZFILE *bzfw = BZ2_bzWriteOpen(&bzerr, fw, bs, 0, 0);
+        if (bzfw && bzerr == BZ_OK) {
+            BZ2_bzWrite(&bzerr, bzfw, (void *)data, (int)size);
+            unsigned int in_lo, in_hi, out_lo, out_hi;
+            BZ2_bzWriteClose64(&bzerr, bzfw, 0, &in_lo, &in_hi, &out_lo, &out_hi);
+        } else if (bzfw) {
+            BZ2_bzWriteClose(&bzerr, bzfw, 1, NULL, NULL);
+        }
+        fclose(fw);
+
+        /* Read back */
+        FILE *fr = fopen(tmppath, "rb");
+        if (!fr) continue;
+        BZFILE *bzfr = BZ2_bzReadOpen(&bzerr, fr, 0, 0, NULL, 0);
+        if (bzfr && bzerr == BZ_OK) {
+            char readbuf[8192];
+            while (bzerr == BZ_OK) {
+                int nread = BZ2_bzRead(&bzerr, bzfr, readbuf, sizeof(readbuf));
+                (void)nread;
+                if (bzerr == BZ_STREAM_END) break;
+            }
+            void *unused;
+            int nUnused;
+            BZ2_bzReadGetUnused(&bzerr, bzfr, &unused, &nUnused);
+            BZ2_bzReadClose(&bzerr, bzfr);
+        } else if (bzfr) {
+            BZ2_bzReadClose(&bzerr, bzfr);
+        }
+        fclose(fr);
+        remove(tmppath);
+    }
+}
+
+static void exercise_bzopen(const unsigned char *data, size_t size) {
+    /* Test bzopen/bzwrite/bzclose and bzopen/bzread/bzclose */
+    const char *tmppath = "/tmp/cov_bzopen_test.bz2";
+
+    BZFILE *bz = BZ2_bzopen(tmppath, "wb9");
+    if (bz) {
+        BZ2_bzwrite(bz, (void *)data, (int)(size > 100000 ? 100000 : size));
+        BZ2_bzclose(bz);
+    }
+
+    bz = BZ2_bzopen(tmppath, "rb");
+    if (bz) {
+        char buf[8192];
+        int n;
+        do {
+            n = BZ2_bzread(bz, buf, sizeof(buf));
+        } while (n > 0);
+        int errnum;
+        const char *errmsg = BZ2_bzerror(bz, &errnum);
+        (void)errmsg;
+        BZ2_bzclose(bz);
+    }
+    remove(tmppath);
+
+    /* Test error paths */
+    BZ2_bzopen(NULL, "rb");
+    BZ2_bzopen(tmppath, NULL);
+    BZ2_bzopen(tmppath, "xyz");  /* invalid mode */
+    BZ2_bzflush(NULL);
+
+    /* Test BZ2_bzWriteClose (non-64 variant) */
+    FILE *fw = fopen(tmppath, "wb");
+    if (fw) {
+        int bzerr;
+        BZFILE *bzfw = BZ2_bzWriteOpen(&bzerr, fw, 5, 0, 0);
+        if (bzfw) {
+            BZ2_bzWrite(&bzerr, bzfw, (void *)"hello", 5);
+            unsigned int nbin, nbout;
+            BZ2_bzWriteClose(&bzerr, bzfw, 0, &nbin, &nbout);
+        }
+        fclose(fw);
+        remove(tmppath);
+    }
+}
+
 static void exercise_param_errors(void) {
     /* Parameter validation paths */
     bz_stream strm;
@@ -137,6 +225,10 @@ int main(int argc, char **argv) {
         /* Try as compressed input (decompress it) */
         exercise_decompress(data, size);
         exercise_streaming_decompress(data, size);
+
+        /* Exercise FILE* API */
+        exercise_fileio_write_read(data, size);
+        exercise_bzopen(data, size);
 
         free(data);
     }

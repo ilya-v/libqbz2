@@ -5,3 +5,4 @@
 fuzz_compress
 fuzz_decompress
 fuzz_differential
+fuzz_diff_streaming
