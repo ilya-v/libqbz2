@@ -380,12 +380,14 @@ Int32 BZ2_decompress ( DState* s )
          );
          s->minLens[t] = minLen;
 
-         /* Build fast decode lookup table for this group */
+         /* Build fast decode lookup table with overflow for this group */
          {
             Int32 tbl_size = 1 << BZ_DECODE_TABLE_BITS;
             Int32 *tbl = &(s->decode_fast[t][0]);
+            Int32 *ovf = &(s->decode_overflow[t][0]);
             Int32 code_val = 0;
             Int32 cur_len = minLen;
+            Int32 ovf_used = 0;
             Int32 pp2;
 
             for (pp2 = 0; pp2 < tbl_size; pp2++) tbl[pp2] = 0;
@@ -398,6 +400,7 @@ Int32 BZ2_decompress ( DState* s )
                   cur_len++;
                }
                if (sym_len <= BZ_DECODE_TABLE_BITS) {
+                  /* Primary table: direct decode */
                   Int32 pad = BZ_DECODE_TABLE_BITS - sym_len;
                   Int32 base_idx = code_val << pad;
                   Int32 fill_count = 1 << pad;
@@ -405,9 +408,47 @@ Int32 BZ2_decompress ( DState* s )
                   Int32 k;
                   for (k = 0; k < fill_count; k++)
                      tbl[base_idx + k] = entry;
+               } else {
+                  /* Overflow: code > BZ_DECODE_TABLE_BITS bits */
+                  Int32 prefix = code_val >> (sym_len - BZ_DECODE_TABLE_BITS);
+                  Int32 extra = sym_len - BZ_DECODE_TABLE_BITS;
+                  Int32 suffix = code_val & ((1 << extra) - 1);
+
+                  /* Allocate overflow sub-table for this prefix if needed */
+                  if (tbl[prefix] == 0) {
+                     Int32 max_extra = maxLen - BZ_DECODE_TABLE_BITS;
+                     Int32 sub_size;
+                     if (max_extra <= 0) max_extra = 1;
+                     sub_size = 1 << max_extra;
+                     if (ovf_used + sub_size > 512) {
+                        /* Overflow table full — fall back to slow path */
+                        code_val++;
+                        continue;
+                     }
+                     /* Encode overflow marker as negative value:
+                        bits [3:0] = max_extra, bits [31:4] = offset */
+                     tbl[prefix] = -(1 + (ovf_used << 4) + max_extra);
+                     { Int32 k; for (k = 0; k < sub_size; k++) ovf[ovf_used + k] = 0; }
+                     ovf_used += sub_size;
+                  }
+
+                  /* Fill overflow sub-table entry */
+                  {
+                     Int32 marker = -(tbl[prefix] + 1);
+                     Int32 sub_extra = marker & 0xF;
+                     Int32 sub_offset = marker >> 4;
+                     Int32 pad2 = sub_extra - extra;
+                     Int32 base_idx2 = suffix << pad2;
+                     Int32 fill2 = 1 << pad2;
+                     Int32 ovf_entry = (sym_len << 16) | sym;
+                     Int32 k;
+                     for (k = 0; k < fill2; k++)
+                        ovf[sub_offset + base_idx2 + k] = ovf_entry;
+                  }
                }
                code_val++;
             }
+            s->decode_overflow_used[t] = ovf_used;
          }
       }
 
@@ -480,17 +521,14 @@ Int32 BZ2_decompress ( DState* s )
                s->tt[nblock]   = (UInt32)(s->seqToUnseq[uc]);
             nblock++;
 
-            /* Fast Huffman decode: table lookup when bits available */
+            /* Fast Huffman decode: two-level table lookup */
             if (groupPos > 0) {
-               /* Refill bit buffer if needed */
-               if (s->bsLive < BZ_DECODE_TABLE_BITS
-                   && s->strm->avail_in >= 4) {
-                  s->bsBuff
-                     = (s->bsBuff << 32) |
-                       ((UInt64)((UChar*)s->strm->next_in)[0] << 24) |
-                       ((UInt64)((UChar*)s->strm->next_in)[1] << 16) |
-                       ((UInt64)((UChar*)s->strm->next_in)[2] <<  8) |
-                       ((UInt64)((UChar*)s->strm->next_in)[3]);
+               /* Branchless bit buffer refill */
+               if (s->bsLive <= 32 && s->strm->avail_in >= 4) {
+                  UInt32 w;
+                  memcpy(&w, s->strm->next_in, 4);
+                  w = __builtin_bswap32(w);
+                  s->bsBuff = (s->bsBuff << 32) | (UInt64)w;
                   s->bsLive += 32;
                   s->strm->next_in += 4;
                   s->strm->avail_in -= 4;
@@ -504,11 +542,30 @@ Int32 BZ2_decompress ( DState* s )
                      (s->bsLive - BZ_DECODE_TABLE_BITS))
                      & ((1 << BZ_DECODE_TABLE_BITS) - 1);
                   Int32 entry = s->decode_fast[gSel][peek];
-                  if (entry != 0) {
+                  if (entry > 0) {
+                     /* Primary table hit */
                      s->bsLive -= (entry >> 16);
                      nextSym = entry & 0xFFFF;
                      groupPos--;
                      continue;
+                  } else if (entry < 0) {
+                     /* Overflow: two-level decode */
+                     Int32 marker = -(entry + 1);
+                     Int32 extra = marker & 0xF;
+                     Int32 offset = marker >> 4;
+                     Int32 total_bits = BZ_DECODE_TABLE_BITS + extra;
+                     if (s->bsLive >= total_bits) {
+                        UInt32 extra_val = (UInt32)(s->bsBuff >>
+                           (s->bsLive - total_bits))
+                           & ((1 << extra) - 1);
+                        Int32 entry2 = s->decode_overflow[gSel][offset + extra_val];
+                        if (entry2 > 0) {
+                           s->bsLive -= (entry2 >> 16);
+                           nextSym = entry2 & 0xFFFF;
+                           groupPos--;
+                           continue;
+                        }
+                     }
                   }
                }
             }
