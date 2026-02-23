@@ -110,6 +110,8 @@ extern void bz_internal_error ( int errcode );
 
 #define BZ_MAX_SELECTORS (2 + (900000 / BZ_G_SIZE))
 
+#define BZ_DECODE_TABLE_BITS 10
+
 /*-- Randomisation table for legacy blocks --*/
 
 extern Int32 BZ2_rNums[512];
@@ -354,6 +356,7 @@ typedef
       Int32    base   [BZ_N_GROUPS][BZ_MAX_ALPHA_SIZE];
       Int32    perm   [BZ_N_GROUPS][BZ_MAX_ALPHA_SIZE];
       Int32    minLens[BZ_N_GROUPS];
+      Int32    decode_fast[BZ_N_GROUPS][1 << BZ_DECODE_TABLE_BITS];
 
       Int32    save_i;
       Int32    save_j;

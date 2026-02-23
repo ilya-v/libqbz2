@@ -379,6 +379,36 @@ Int32 BZ2_decompress ( DState* s )
             minLen, maxLen, alphaSize
          );
          s->minLens[t] = minLen;
+
+         /* Build fast decode lookup table for this group */
+         {
+            Int32 tbl_size = 1 << BZ_DECODE_TABLE_BITS;
+            Int32 *tbl = &(s->decode_fast[t][0]);
+            Int32 code_val = 0;
+            Int32 cur_len = minLen;
+            Int32 pp2;
+
+            for (pp2 = 0; pp2 < tbl_size; pp2++) tbl[pp2] = 0;
+
+            for (pp2 = 0; pp2 < alphaSize; pp2++) {
+               Int32 sym = s->perm[t][pp2];
+               Int32 sym_len = s->len[t][sym];
+               while (cur_len < sym_len) {
+                  code_val <<= 1;
+                  cur_len++;
+               }
+               if (sym_len <= BZ_DECODE_TABLE_BITS) {
+                  Int32 pad = BZ_DECODE_TABLE_BITS - sym_len;
+                  Int32 base_idx = code_val << pad;
+                  Int32 fill_count = 1 << pad;
+                  Int32 entry = (sym_len << 16) | sym;
+                  Int32 k;
+                  for (k = 0; k < fill_count; k++)
+                     tbl[base_idx + k] = entry;
+               }
+               code_val++;
+            }
+         }
       }
 
       /* --- Decode the MTF values and reconstruct block data --- */
@@ -450,6 +480,38 @@ Int32 BZ2_decompress ( DState* s )
                s->tt[nblock]   = (UInt32)(s->seqToUnseq[uc]);
             nblock++;
 
+            /* Fast Huffman decode: table lookup when bits available */
+            if (groupPos > 0) {
+               /* Refill bit buffer if needed */
+               if (s->bsLive < BZ_DECODE_TABLE_BITS
+                   && s->strm->avail_in >= 4) {
+                  s->bsBuff
+                     = (s->bsBuff << 32) |
+                       ((UInt64)((UChar*)s->strm->next_in)[0] << 24) |
+                       ((UInt64)((UChar*)s->strm->next_in)[1] << 16) |
+                       ((UInt64)((UChar*)s->strm->next_in)[2] <<  8) |
+                       ((UInt64)((UChar*)s->strm->next_in)[3]);
+                  s->bsLive += 32;
+                  s->strm->next_in += 4;
+                  s->strm->avail_in -= 4;
+                  { UInt32 old = s->strm->total_in_lo32;
+                    s->strm->total_in_lo32 += 4;
+                    if (s->strm->total_in_lo32 < old)
+                       s->strm->total_in_hi32++; }
+               }
+               if (s->bsLive >= BZ_DECODE_TABLE_BITS) {
+                  UInt32 peek = (UInt32)(s->bsBuff >>
+                     (s->bsLive - BZ_DECODE_TABLE_BITS))
+                     & ((1 << BZ_DECODE_TABLE_BITS) - 1);
+                  Int32 entry = s->decode_fast[gSel][peek];
+                  if (entry != 0) {
+                     s->bsLive -= (entry >> 16);
+                     nextSym = entry & 0xFFFF;
+                     groupPos--;
+                     continue;
+                  }
+               }
+            }
             GET_MTF_VAL(BZ_X_MTF_5, BZ_X_MTF_6, nextSym);
             continue;
          }
