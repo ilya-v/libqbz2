@@ -133,6 +133,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_advanced.c)
     add_test(NAME advanced_tests COMMAND test_advanced)
 endif()
 
+# Systematic round-trip tests (patterns, sizes, block sizes, work factors)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_roundtrip.c)
+    add_executable(test_roundtrip tests/test_roundtrip.c)
+    target_link_libraries(test_roundtrip qbz2)
+    add_test(NAME roundtrip_tests COMMAND test_roundtrip)
+endif()
+
 # Differential tests (uses dlopen for reference)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_differential.c)
     add_executable(test_differential tests/test_differential.c)
