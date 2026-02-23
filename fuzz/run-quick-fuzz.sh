@@ -69,7 +69,7 @@ fi
 # --- Build reference library if needed (for differential fuzzer) ---
 
 REF_LIB="$PROJECT_DIR/reference/libbz2_ref.so"
-if [[ " ${HARNESSES[*]} " =~ " fuzz_differential " ]] && [ ! -f "$REF_LIB" ]; then
+if [[ " ${HARNESSES[*]} " =~ fuzz_diff ]] && [ ! -f "$REF_LIB" ]; then
     log "Building reference libbz2 shared library..."
     REF_SRC="$PROJECT_DIR/reference/bzip2"
     gcc -shared -fPIC -O2 -o "$REF_LIB" \
@@ -127,12 +127,17 @@ run_harness() {
         [ -d "$sd" ] && seed_args="$seed_args $sd"
     done
 
+    # Dictionary for bzip2 format tokens (improves coverage dramatically)
+    local dict_arg=""
+    [ -f "$SCRIPT_DIR/bzip2.dict" ] && dict_arg="-dict=$SCRIPT_DIR/bzip2.dict"
+
     # Run with libFuzzer
     "$binary" "$corpus" $seed_args \
         -max_total_time="$TIME_PER_HARNESS" \
         -print_final_stats=1 \
         -jobs=1 \
         -workers=1 \
+        $dict_arg \
         > "$log_file" 2>&1
 
     return $?

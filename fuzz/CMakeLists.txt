@@ -1,20 +1,40 @@
 # fuzz/CMakeLists.txt — Build fuzz harnesses for libqbz2
 #
+# Builds the library from source with fuzzer coverage instrumentation,
+# then links each harness with libFuzzer + ASAN + UBSAN.
+#
 # Usage:
-#   cmake -S fuzz -B build/fuzz -DCMAKE_C_COMPILER=clang \
-#         -DLIBQBZ2_INCLUDE=include -DLIBQBZ2_LIB=build/libqbz2.a
+#   cmake -S fuzz -B build/fuzz -DCMAKE_C_COMPILER=clang
 #   cmake --build build/fuzz
 
 cmake_minimum_required(VERSION 3.16)
 project(libqbz2-fuzz C)
 
-# Paths to libqbz2 and reference libbz2
+# Paths
+set(LIBQBZ2_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../src" CACHE PATH "libqbz2 source dir")
 set(LIBQBZ2_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../include" CACHE PATH "libqbz2 include dir")
-set(LIBQBZ2_LIB "" CACHE FILEPATH "Path to libqbz2 static library")
-set(REF_BZ2_LIB "" CACHE FILEPATH "Path to reference libbz2 shared library")
 
-# Sanitizer and fuzzer flags
-set(FUZZ_FLAGS "-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g")
+# Build libqbz2 from source with coverage instrumentation (fuzzer-no-link)
+# This ensures libFuzzer can track coverage inside the library.
+set(LIB_SOURCES
+    ${LIBQBZ2_SRC}/blocksort.c
+    ${LIBQBZ2_SRC}/huffman.c
+    ${LIBQBZ2_SRC}/crctable.c
+    ${LIBQBZ2_SRC}/randtable.c
+    ${LIBQBZ2_SRC}/compress.c
+    ${LIBQBZ2_SRC}/decompress.c
+    ${LIBQBZ2_SRC}/bzlib.c
+)
+
+add_library(qbz2_fuzz STATIC ${LIB_SOURCES})
+target_include_directories(qbz2_fuzz PUBLIC ${LIBQBZ2_INCLUDE} PRIVATE ${LIBQBZ2_SRC})
+target_compile_options(qbz2_fuzz PRIVATE
+    -fsanitize=fuzzer-no-link,address,undefined
+    -fno-omit-frame-pointer -g -O1
+)
+
+# Harness compile/link flags
+set(FUZZ_FLAGS "-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${FUZZ_FLAGS}")
 
 # Common include directories
@@ -23,7 +43,7 @@ include_directories(${LIBQBZ2_INCLUDE})
 # Function to add a fuzz target
 function(add_fuzz_target name source)
     add_executable(${name} ${source})
-    target_link_libraries(${name} ${LIBQBZ2_LIB})
+    target_link_libraries(${name} qbz2_fuzz)
     if(ARGN)
         target_link_libraries(${name} ${ARGN})
     endif()

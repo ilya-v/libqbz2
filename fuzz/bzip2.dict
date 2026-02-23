@@ -1,0 +1,23 @@
+# bzip2 format dictionary for libFuzzer
+# Stream header magic
+bz2_magic="\x42\x5a\x68"
+# Block sizes '1' through '9'
+bs1="\x42\x5a\x68\x31"
+bs2="\x42\x5a\x68\x32"
+bs3="\x42\x5a\x68\x33"
+bs4="\x42\x5a\x68\x34"
+bs5="\x42\x5a\x68\x35"
+bs6="\x42\x5a\x68\x36"
+bs7="\x42\x5a\x68\x37"
+bs8="\x42\x5a\x68\x38"
+bs9="\x42\x5a\x68\x39"
+# Block header magic (pi): 0x314159265359
+block_magic="\x31\x41\x59\x26\x53\x59"
+# End-of-stream magic (sqrt(pi)): 0x177245385090
+eos_magic="\x17\x72\x45\x38\x50\x90"
+# Common byte values
+zero="\x00"
+ff="\xff"
+# Useful 2-byte combos for bz2 internals
+huffman_0="\x00\x00"
+huffman_1="\x00\x01"
