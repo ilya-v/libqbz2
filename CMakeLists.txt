@@ -101,3 +101,26 @@ if(ENABLE_SANITIZERS)
     target_compile_options(bz2_ref PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(bz2_ref PRIVATE -fsanitize=address,undefined)
 endif()
+
+# --- Test and benchmark targets (tester-owned) ---
+enable_testing()
+
+# Unit tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_api.c)
+    add_executable(test_api tests/test_api.c)
+    target_link_libraries(test_api qbz2)
+    add_test(NAME unit_tests COMMAND test_api)
+endif()
+
+# Differential tests (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_differential.c)
+    add_executable(test_differential tests/test_differential.c)
+    target_link_libraries(test_differential qbz2 dl)
+    add_test(NAME differential_tests COMMAND test_differential)
+endif()
+
+# Benchmark
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
+    add_executable(bench_throughput bench/bench.c)
+    target_link_libraries(bench_throughput qbz2 dl)
+endif()
