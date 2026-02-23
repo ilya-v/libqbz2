@@ -196,6 +196,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_oom.c)
     add_test(NAME oom_tests COMMAND test_oom)
 endif()
 
+# Decompression error coverage tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_errors.c)
+    add_executable(test_decompress_errors tests/test_decompress_errors.c)
+    target_link_libraries(test_decompress_errors qbz2)
+    add_test(NAME decompress_error_tests COMMAND test_decompress_errors)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
