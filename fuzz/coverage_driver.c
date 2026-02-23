@@ -168,10 +168,13 @@ static void exercise_bzopen(const unsigned char *data, size_t size) {
     }
     remove(tmppath);
 
-    /* Test error paths */
-    BZ2_bzopen(NULL, "rb");
-    BZ2_bzopen(tmppath, NULL);
-    BZ2_bzopen(tmppath, "xyz");  /* invalid mode */
+    /* Test error paths — close if any unexpectedly succeed */
+    bz = BZ2_bzopen(NULL, "rb");
+    if (bz) BZ2_bzclose(bz);
+    bz = BZ2_bzopen(tmppath, NULL);
+    if (bz) BZ2_bzclose(bz);
+    bz = BZ2_bzopen(tmppath, "xyz");  /* invalid mode */
+    if (bz) BZ2_bzclose(bz);
     BZ2_bzflush(NULL);
 
     /* Test BZ2_bzWriteClose (non-64 variant) */
@@ -190,17 +193,38 @@ static void exercise_bzopen(const unsigned char *data, size_t size) {
 }
 
 static void exercise_param_errors(void) {
-    /* Parameter validation paths */
+    /* Parameter validation paths — clean up after any successful init */
     bz_stream strm;
-    memset(&strm, 0, sizeof(strm));
+    int ret;
+
     BZ2_bzCompressInit(NULL, 5, 0, 0);
-    BZ2_bzCompressInit(&strm, 0, 0, 0);   /* invalid blockSize */
-    BZ2_bzCompressInit(&strm, 10, 0, 0);  /* invalid blockSize */
-    BZ2_bzCompressInit(&strm, 5, -1, 0);  /* invalid verbosity */
-    BZ2_bzCompressInit(&strm, 5, 0, -1);  /* invalid workFactor */
+
+    memset(&strm, 0, sizeof(strm));
+    ret = BZ2_bzCompressInit(&strm, 0, 0, 0);   /* invalid blockSize */
+    if (ret == BZ_OK) BZ2_bzCompressEnd(&strm);
+
+    memset(&strm, 0, sizeof(strm));
+    ret = BZ2_bzCompressInit(&strm, 10, 0, 0);  /* invalid blockSize */
+    if (ret == BZ_OK) BZ2_bzCompressEnd(&strm);
+
+    memset(&strm, 0, sizeof(strm));
+    ret = BZ2_bzCompressInit(&strm, 5, -1, 0);  /* invalid verbosity */
+    if (ret == BZ_OK) BZ2_bzCompressEnd(&strm);
+
+    memset(&strm, 0, sizeof(strm));
+    ret = BZ2_bzCompressInit(&strm, 5, 0, -1);  /* invalid workFactor */
+    if (ret == BZ_OK) BZ2_bzCompressEnd(&strm);
+
     BZ2_bzDecompressInit(NULL, 0, 0);
-    BZ2_bzDecompressInit(&strm, -1, 0);   /* invalid verbosity */
-    BZ2_bzDecompressInit(&strm, 0, 2);    /* invalid small */
+
+    memset(&strm, 0, sizeof(strm));
+    ret = BZ2_bzDecompressInit(&strm, -1, 0);   /* invalid verbosity */
+    if (ret == BZ_OK) BZ2_bzDecompressEnd(&strm);
+
+    memset(&strm, 0, sizeof(strm));
+    ret = BZ2_bzDecompressInit(&strm, 0, 2);    /* invalid small */
+    if (ret == BZ_OK) BZ2_bzDecompressEnd(&strm);
+
     BZ2_bzCompress(NULL, BZ_RUN);
     BZ2_bzDecompress(NULL);
     BZ2_bzCompressEnd(NULL);
