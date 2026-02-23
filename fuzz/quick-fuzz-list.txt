@@ -1,0 +1,7 @@
+# quick-fuzz-list.txt — Harnesses to run in per-commit quick fuzz.
+# One harness name per line. Lines starting with # are comments.
+# Maintained by the strategic tester. The tester runs run-quick-fuzz.sh as-is.
+
+fuzz_compress
+fuzz_decompress
+fuzz_differential

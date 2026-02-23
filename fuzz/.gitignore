@@ -1,0 +1,4 @@
+# Generated corpus (regenerate with generate-corpus.sh)
+corpus/
+
+# Build artifacts handled by top-level .gitignore
