@@ -245,6 +245,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_block_boundary_bitreader.c)
     add_test(NAME block_boundary_bitreader_tests COMMAND test_block_boundary_bitreader)
 endif()
 
+# Compression state machine edge cases
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compress_states.c)
+    add_executable(test_compress_states tests/test_compress_states.c)
+    target_link_libraries(test_compress_states qbz2)
+    add_test(NAME compress_states_tests COMMAND test_compress_states)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
