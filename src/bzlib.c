@@ -615,10 +615,18 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
             while (True) {
                if (cs_avail_out == 0) goto return_notr;
                if (c_state_out_len == 1) break;
-               *( (UChar*)(cs_next_out) ) = c_state_out_ch;
-               c_state_out_len--;
-               cs_next_out++;
-               cs_avail_out--;
+               /* Batch output: all bytes in the run are c_state_out_ch */
+               {
+                  UInt32 n = (UInt32)c_state_out_len - 1;
+                  if (n > cs_avail_out) n = cs_avail_out;
+                  memset(cs_next_out, c_state_out_ch, n);
+                  c_calculatedBlockCRC = BZ2_crc32_update(
+                     c_calculatedBlockCRC,
+                     (const UChar*)cs_next_out, n );
+                  cs_next_out += n;
+                  cs_avail_out -= n;
+                  c_state_out_len -= (Int32)n;
+               }
             }
             s_state_out_len_eq_one:
             {
@@ -626,6 +634,7 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                   c_state_out_len = 1; goto return_notr;
                };
                *( (UChar*)(cs_next_out) ) = c_state_out_ch;
+               BZ_UPDATE_CRC ( c_calculatedBlockCRC, c_state_out_ch );
                cs_next_out++;
                cs_avail_out--;
             }
@@ -664,16 +673,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
       s->strm->total_out_lo32 += (avail_out_INIT - cs_avail_out);
       if (s->strm->total_out_lo32 < total_out_lo32_old)
          s->strm->total_out_hi32++;
-
-      /* Batch CRC over all output bytes written in this call */
-      {
-         UInt32 n_written = avail_out_INIT - cs_avail_out;
-         if (n_written > 0)
-            c_calculatedBlockCRC = BZ2_crc32_update(
-               c_calculatedBlockCRC,
-               (const UChar*)(cs_next_out - n_written),
-               n_written );
-      }
 
       /* Save cached state back */
       s->calculatedBlockCRC = c_calculatedBlockCRC;
