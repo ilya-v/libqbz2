@@ -175,6 +175,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_multiblock.c)
     add_test(NAME multiblock_tests COMMAND test_multiblock)
 endif()
 
+# Blocksort path tests (SA-IS, fallback, mainSort, intermediate block sizes)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_blocksort_paths.c)
+    add_executable(test_blocksort_paths tests/test_blocksort_paths.c)
+    target_link_libraries(test_blocksort_paths qbz2)
+    add_test(NAME blocksort_paths_tests COMMAND test_blocksort_paths)
+endif()
+
 # bzip2-tests corpus conformance (uses dlopen for reference)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzip2_corpus.c)
     add_executable(test_bzip2_corpus tests/test_bzip2_corpus.c)
