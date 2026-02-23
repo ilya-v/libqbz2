@@ -251,6 +251,17 @@ All optimization work must be guided by profiling data, not by intuition or gues
 4. **SIMD is required where applicable**: the BWT inverse, MTF decode, Huffman decode, CRC computation, and RLE encoding/decoding are all candidates for SIMD (SSE2/AVX2) vectorization. Scalar-only implementations of these hot loops are not acceptable as a final state — evaluate SIMD for every hot inner loop identified by the profiler.
 5. **No "optimizations exhausted" without data**: do not declare optimization complete without a profiler report showing that the remaining hot paths are at the theoretical throughput limit (memory bandwidth, instruction throughput, or data dependency chains). If the profiler shows headroom, keep optimizing.
 
+### 6.2 Profile-Guided Optimization (PGO)
+
+The build system must support profile-guided optimization (PGO) as a standard build mode:
+
+1. **Instrumented build**: compile with `-fprofile-generate` (GCC) or `-fprofile-instr-generate` (Clang) to produce an instrumented binary that records branch frequencies, loop trip counts, and call targets during execution.
+2. **Training workload**: run the instrumented binary against a representative training workload — the standard benchmark suite (text, binary, repetitive, random data at multiple block sizes). The training workload must exercise both compression and decompression paths across all block sizes.
+3. **Optimized build**: recompile with `-fprofile-use` (GCC) or `-fprofile-instr-use` (Clang) using the collected profile data. This enables the compiler to optimize branch layout, inline decisions, and loop unrolling based on real execution patterns.
+4. **Benchmark both**: always report benchmark results for both the regular (`-O2`/`-O3`) build and the PGO build. PGO typically yields 5–15% improvement on branch-heavy code (Huffman decoding, state machines, MTF).
+5. **PGO build target**: the CMake build system must provide a `pgo` build target (e.g., `cmake --build build/pgo`) that automates the full three-step process: instrumented build → training run → optimized rebuild. The PGO profile data and build artifacts go under `build/pgo/`.
+6. **PGO in benchmarks**: the official benchmark numbers reported in validation reports should include both regular and PGO results, so the full optimization potential is visible.
+
 ## 7. Process
 
 - Report status to the coordinator after every meaningful step — before and after making changes, after running tests, whenever hitting a blocker. Never work silently.
