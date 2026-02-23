@@ -46,20 +46,45 @@ Each entry must include:
 4. **Test Results**: summarize any new validation reports AND strategic-tester campaign reports. Include:
    - Validation: pass/fail counts, ASAN status, fuzz results, divergence counts, benchmark speedups. Flag regressions.
    - Strategic-tester: fuzz campaign results (runs, crashes, divergences, coverage), differential fuzz totals, any bugs found. Always check `test-results/` for new campaign/coverage/fuzz reports from the strategic-tester.
-   - **Test status bar**: ASCII art showing test pass/fail ratio, max 80 chars wide. Use `✓` for passing and `✗` for failing. Show delta from last post.
+   - **Test dashboard**: multiple ASCII status bars, one per test group plus a total bar. Max 80 chars wide per bar.
+
+     **Symbols** — four states, distinguishing old vs new:
+     - `✓` — old passing test (passed in previous post too)
+     - `●` — **new** passing test (added or newly passing since last post)
+     - `✗` — old failing test (was already failing last post)
+     - `◆` — **new** failing test (added or newly failing since last post)
+
+     **Scaling** — auto-scale based on the largest group:
      - Under 80 tests: one char per test
-     - 80–800 tests: one char per 10 tests (label: "each char = 10 tests")
-     - 800–8000 tests: one char per 100 tests (label: "each char = 100 tests")
+     - 80–800 tests: one char per 10 tests (label: "1ch=10")
+     - 800–8000 tests: one char per 100 tests (label: "1ch=100")
      - Round up partial groups to the nearest char
-     Example (331 pass, 0 fail, +67 since last post):
+
+     **Bars to show** — one bar for each test group that has tests, plus a total:
+     - `Unit` — unit tests
+     - `Diff` — differential tests (libqbz2 vs libbz2 comparison)
+     - `Fuzz` — fuzz campaign results (crash runs + differential fuzz runs)
+     - `ASAN` — ASAN/UBSAN test runs
+     - `Conf` — conformance tests (bzip2-tests repo, libbz2 test suite)
+     - `ALL` — **total across all groups** (always shown, always last)
+
+     Only show bars for groups that have data. If a group has zero tests, omit it. The ALL bar is always shown.
+
+     **Format** — each bar on its own line, right-aligned labels:
      ```
-     Tests: |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓| 331/331 pass (+67) — each char = 10 tests
+        Unit |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓●●●●●●        | 190/190 pass (+60)  1ch=10
+        Diff |✓✓✓✓✓✓✓✓✓✓✓✓●●                     | 129/129 pass (+29)  1ch=10
+        Fuzz |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓               | 7429/7429 pass (+0) 1ch=100 [strategic]
+        ASAN |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓                 | 190/190 pass (+0)   1ch=10
+         ALL |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓●●●●●●●| 726/726 pass (+89)  1ch=10
      ```
-     Example with failures (300 pass, 31 fail, +0 since last post):
+     Example with failures:
      ```
-     Tests: |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✗✗✗✗| 300/331 pass (+0) — each char = 10 tests
+        Unit |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓◆◆              | 190/210 pass (+20)  1ch=10
+         ALL |✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓◆◆       | 706/726 pass (+20)  1ch=10
      ```
-   - Always show the delta: total tests change and passing tests change vs previous post
+
+     **Deltas**: always show delta vs previous post — both total count change and passing count change. If a group is new (wasn't in previous post), show the full count as the delta.
 5. **Benchmarks**: if new benchmark data is available, report current speedup ratios vs reference. Note improvements or regressions compared to previous entry.
 6. **Coverage**: if new coverage data is available, report line/branch/function percentages. Note changes.
 7. **Agent Activity**:

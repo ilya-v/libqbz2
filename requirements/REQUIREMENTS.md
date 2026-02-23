@@ -32,6 +32,7 @@ Write a new bzip2 compression library from scratch — a clean-room rewrite, not
 - libbz2's own test suite must pass unmodified against libqbz2
 - Round-trip testing: compress with libqbz2, decompress with libbz2 (and vice versa) — output must match the original input in all cases
 - All block sizes (1–9) and all `workFactor` values must produce identical output to libbz2
+- **External test corpus**: clone and use the bzip2-tests repository (`git://sourceware.org/git/bzip2-tests.git`) as an additional conformance and regression test suite. This repository contains cross-project test files specifically designed for bzip2 compatibility testing. All test files from this repo must be used as inputs for differential testing and as seed corpus for fuzz harnesses. Since we are building a highly compatible drop-in replacement, passing every test case in this repository is a hard requirement — any failure indicates a compatibility bug.
 
 ### 4.2 Unit Tests
 - Comprehensive unit test suite covering all public API functions
@@ -189,12 +190,47 @@ Each validation produces a report committed to `test-results/`, tagged with the 
 
 | Directory | Contents | Tracked |
 |-----------|----------|---------|
-| `reference/` | Reference libbz2 source and pre-built library | Yes |
+| `reference/` | Reference libbz2 source and pre-built library (build artifacts under `reference/build/` are gitignored) | Yes (source only) |
 | `requirements/` | Project requirements (this file) | Yes |
 | `process/` | Agent rules and process scripts | Yes |
 | `cmake/` | CMake modules and helpers | Yes |
 | `scripts/` | Utility scripts | Yes |
-| `logs/` | Runtime logs (injection, project log) | No |
+| `logs/` | Runtime logs (project feed, injection logs) | No |
+
+### 5.5 `.gitignore`
+
+The following must be gitignored — these are build artifacts, transient outputs, and runtime files that must never be committed:
+
+```
+# Build output — ALL builds (debug, release, asan, coverage, pgo, etc.) go under build/
+build/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+
+# Test output (transient scratch data)
+test-output/
+
+# Git worktrees (used by testers for isolated builds)
+.worktree/
+
+# Reference build artifacts (source is tracked, builds are not)
+reference/build/
+
+# Editor and IDE files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Runtime logs
+logs/
+```
+
+**No stray build directories.** All build variants (debug, release, asan, coverage, fuzz, pgo, etc.) must be placed under `build/` as subdirectories (e.g., `build/release/`, `build/asan/`, `build/coverage/`). Top-level directories like `build-asan/` or `build-debug/` are not allowed.
 
 ## 6. Performance
 
@@ -203,6 +239,17 @@ Each validation produces a report committed to `test-results/`, tagged with the 
 - Target: equal or better throughput and latency than the fastest competitors
 - Benchmark on a variety of input types (text, binary, repetitive, random, small buffers, large buffers, all block sizes)
 - A major or total architecture rework is a viable path to achieving the throughput targets — do not limit optimization to incremental micro-optimizations on the existing libbz2 architecture if a redesign would yield better results
+- **The library must remain single-threaded.** Multi-threading is not allowed. All performance gains must come from algorithmic improvements, SIMD, cache optimization, and other single-threaded techniques.
+
+### 6.1 Profiler-Guided Optimization
+
+All optimization work must be guided by profiling data, not by intuition or guesswork. Before optimizing any code path:
+
+1. **Profile first**: use `perf record` / `perf stat` / `perf annotate`, `callgrind`, or equivalent tools to identify where CPU cycles are actually spent. Report the hot functions, their percentage of total runtime, and the specific bottleneck (compute-bound, memory-bound, branch-bound).
+2. **Target the bottleneck**: optimize the function or loop that the profiler identifies as the top consumer. Do not optimize code that the profiler shows is already fast or rarely executed.
+3. **Measure after**: re-profile after each optimization to verify the bottleneck shifted and the speedup is real. Report before/after numbers.
+4. **SIMD is required where applicable**: the BWT inverse, MTF decode, Huffman decode, CRC computation, and RLE encoding/decoding are all candidates for SIMD (SSE2/AVX2) vectorization. Scalar-only implementations of these hot loops are not acceptable as a final state — evaluate SIMD for every hot inner loop identified by the profiler.
+5. **No "optimizations exhausted" without data**: do not declare optimization complete without a profiler report showing that the remaining hot paths are at the theoretical throughput limit (memory bandwidth, instruction throughput, or data dependency chains). If the profiler shows headroom, keep optimizing.
 
 ## 7. Process
 
