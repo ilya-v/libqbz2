@@ -6,6 +6,11 @@
 
 #include "qbz2_internal.h"
 
+#ifdef __SSE2__
+#include <emmintrin.h>
+#include <string.h>
+#endif
+
 
 /*
  * Reset the bitstream writer to empty state.
@@ -111,7 +116,7 @@ void makeMaps_e ( EState* s )
 static
 void generateMTFValues ( EState* s )
 {
-   UChar   yy[256];
+   UChar   yy[272] __attribute__((aligned(16)));
    Int32   i, j;
    Int32   zPend;
    Int32   wr;
@@ -129,6 +134,7 @@ void generateMTFValues ( EState* s )
    wr = 0;
    zPend = 0;
    for (i = 0; i < s->nInUse; i++) yy[i] = (UChar) i;
+   for (i = s->nInUse; i < 272; i++) yy[i] = (UChar)0xFF;
 
    for (i = 0; i < s->nblock; i++) {
       UChar ll_i;
@@ -156,6 +162,29 @@ void generateMTFValues ( EState* s )
             };
             zPend = 0;
          }
+#        ifdef __SSE2__
+         {
+            /* SIMD-accelerated MTF: search 16 bytes at a time */
+            __m128i needle = _mm_set1_epi8((char)ll_i);
+            Int32 pos = 0;
+            while (1) {
+               __m128i chunk = _mm_load_si128(
+                  (const __m128i *)(yy + pos));
+               int mask = _mm_movemask_epi8(
+                  _mm_cmpeq_epi8(chunk, needle));
+               if (mask) {
+                  pos += __builtin_ctz(mask);
+                  break;
+               }
+               pos += 16;
+            }
+            /* Shift yy[0..pos-1] right by one, put ll_i at front */
+            memmove(yy + 1, yy, pos);
+            yy[0] = ll_i;
+            j = pos;
+            mtfv[wr] = j+1; wr++; s->mtfFreq[j+1]++;
+         }
+#        else
          {
             register UChar  rtmp;
             register UChar* ryy_j;
@@ -175,6 +204,7 @@ void generateMTFValues ( EState* s )
             j = ryy_j - &(yy[0]);
             mtfv[wr] = j+1; wr++; s->mtfFreq[j+1]++;
          }
+#        endif
 
       }
    }
