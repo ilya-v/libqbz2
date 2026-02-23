@@ -112,6 +112,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_api.c)
     add_test(NAME unit_tests COMMAND test_api)
 endif()
 
+# Edge case and conformance tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edge_cases.c)
+    add_executable(test_edge_cases tests/test_edge_cases.c)
+    target_link_libraries(test_edge_cases qbz2)
+    add_test(NAME edge_case_tests COMMAND test_edge_cases)
+endif()
+
 # Differential tests (uses dlopen for reference)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_differential.c)
     add_executable(test_differential tests/test_differential.c)
