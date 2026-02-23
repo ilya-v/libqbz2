@@ -11,6 +11,7 @@
 #endif
 
 #include "qbz2_internal.h"
+#include <string.h>
 
 
 /*
@@ -389,18 +390,8 @@ Int32 BZ2_decompress ( DState* s )
 
       for (i = 0; i <= 255; i++) s->unzftab[i] = 0;
 
-      /* Initialize the MTF decoder */
-      {
-         Int32 ii, jj, kk;
-         kk = MTFA_SIZE-1;
-         for (ii = 256 / MTFL_SIZE - 1; ii >= 0; ii--) {
-            for (jj = MTFL_SIZE-1; jj >= 0; jj--) {
-               s->mtfa[kk] = (UChar)(ii * MTFL_SIZE + jj);
-               kk--;
-            }
-            s->mtfbase[ii] = kk + 1;
-         }
-      }
+      /* Initialize the MTF decoder — flat array in s->mtfa[0..255] */
+      for (i = 0; i < 256; i++) s->mtfa[i] = (UChar) i;
 
       nblock = 0;
       GET_MTF_VAL(BZ_X_MTF_1, BZ_X_MTF_2, nextSym);
@@ -423,7 +414,7 @@ Int32 BZ2_decompress ( DState* s )
                while (nextSym == BZ_RUNA || nextSym == BZ_RUNB);
 
             es++;
-            uc = s->seqToUnseq[ s->mtfa[s->mtfbase[0]] ];
+            uc = s->seqToUnseq[ s->mtfa[0] ];
             s->unzftab[uc] += es;
 
             if (nblock + es > nblockMAX) RETURN(BZ_DATA_ERROR);
@@ -445,57 +436,12 @@ Int32 BZ2_decompress ( DState* s )
 
             if (nblock >= nblockMAX) RETURN(BZ_DATA_ERROR);
 
-            /* Perform inverse MTF on (nextSym - 1) */
+            /* Inverse MTF: flat array in s->mtfa[0..nInUse-1] */
             {
-               Int32 ii, jj, kk, pp, lno, off;
-               UInt32 nn;
-               nn = (UInt32)(nextSym - 1);
-
-               if (nn < MTFL_SIZE) {
-                  /* Short-circuit for small indices */
-                  pp = s->mtfbase[0];
-                  uc = s->mtfa[pp+nn];
-                  while (nn > 3) {
-                     Int32 z = pp+nn;
-                     s->mtfa[(z)  ] = s->mtfa[(z)-1];
-                     s->mtfa[(z)-1] = s->mtfa[(z)-2];
-                     s->mtfa[(z)-2] = s->mtfa[(z)-3];
-                     s->mtfa[(z)-3] = s->mtfa[(z)-4];
-                     nn -= 4;
-                  }
-                  while (nn > 0) {
-                     s->mtfa[(pp+nn)] = s->mtfa[(pp+nn)-1]; nn--;
-                  };
-                  s->mtfa[pp] = uc;
-               } else {
-                  /* General case: cross-list MTF update */
-                  lno = nn / MTFL_SIZE;
-                  off = nn % MTFL_SIZE;
-                  pp = s->mtfbase[lno] + off;
-                  uc = s->mtfa[pp];
-                  while (pp > s->mtfbase[lno]) {
-                     s->mtfa[pp] = s->mtfa[pp-1]; pp--;
-                  };
-                  s->mtfbase[lno]++;
-                  while (lno > 0) {
-                     s->mtfbase[lno]--;
-                     s->mtfa[s->mtfbase[lno]]
-                        = s->mtfa[s->mtfbase[lno-1] + MTFL_SIZE - 1];
-                     lno--;
-                  }
-                  s->mtfbase[0]--;
-                  s->mtfa[s->mtfbase[0]] = uc;
-                  if (s->mtfbase[0] == 0) {
-                     kk = MTFA_SIZE-1;
-                     for (ii = 256 / MTFL_SIZE-1; ii >= 0; ii--) {
-                        for (jj = MTFL_SIZE-1; jj >= 0; jj--) {
-                           s->mtfa[kk] = s->mtfa[s->mtfbase[ii] + jj];
-                           kk--;
-                        }
-                        s->mtfbase[ii] = kk + 1;
-                     }
-                  }
-               }
+               UInt32 nn = (UInt32)(nextSym - 1);
+               uc = s->mtfa[nn];
+               memmove(s->mtfa + 1, s->mtfa, nn);
+               s->mtfa[0] = uc;
             }
 
             s->unzftab[s->seqToUnseq[uc]]++;
