@@ -51,17 +51,33 @@ void makeMaps_d ( DState* s )
          vvv = v;                                 \
          break;                                   \
       }                                           \
-      if (s->strm->avail_in == 0) RETURN(BZ_OK);  \
-      s->bsBuff                                   \
-         = (s->bsBuff << 8) |                     \
-           ((UInt32)                              \
-              (*((UChar*)(s->strm->next_in))));   \
-      s->bsLive += 8;                             \
-      s->strm->next_in++;                         \
-      s->strm->avail_in--;                        \
-      s->strm->total_in_lo32++;                   \
-      if (s->strm->total_in_lo32 == 0)            \
-         s->strm->total_in_hi32++;                \
+      if (s->strm->avail_in >= 4 && s->bsLive <= 32) { \
+         s->bsBuff                                \
+            = (s->bsBuff << 32) |                 \
+              ((UInt64)((UChar*)s->strm->next_in)[0] << 24) | \
+              ((UInt64)((UChar*)s->strm->next_in)[1] << 16) | \
+              ((UInt64)((UChar*)s->strm->next_in)[2] <<  8) | \
+              ((UInt64)((UChar*)s->strm->next_in)[3]);        \
+         s->bsLive += 32;                         \
+         s->strm->next_in += 4;                   \
+         s->strm->avail_in -= 4;                  \
+         { UInt32 old = s->strm->total_in_lo32;   \
+           s->strm->total_in_lo32 += 4;           \
+           if (s->strm->total_in_lo32 < old)      \
+              s->strm->total_in_hi32++; }         \
+      } else {                                    \
+         if (s->strm->avail_in == 0) RETURN(BZ_OK); \
+         s->bsBuff                                \
+            = (s->bsBuff << 8) |                  \
+              ((UInt64)                            \
+                 (*((UChar*)(s->strm->next_in)))); \
+         s->bsLive += 8;                          \
+         s->strm->next_in++;                      \
+         s->strm->avail_in--;                     \
+         s->strm->total_in_lo32++;                \
+         if (s->strm->total_in_lo32 == 0)         \
+            s->strm->total_in_hi32++;             \
+      }                                           \
    }
 
 #define GET_UCHAR(lll,uuu)                        \
@@ -410,20 +426,18 @@ Int32 BZ2_decompress ( DState* s )
             uc = s->seqToUnseq[ s->mtfa[s->mtfbase[0]] ];
             s->unzftab[uc] += es;
 
-            if (s->smallDecompress)
-               while (es > 0) {
-                  if (nblock >= nblockMAX) RETURN(BZ_DATA_ERROR);
-                  s->ll16[nblock] = (UInt16)uc;
-                  nblock++;
-                  es--;
-               }
-            else
-               while (es > 0) {
-                  if (nblock >= nblockMAX) RETURN(BZ_DATA_ERROR);
-                  s->tt[nblock] = (UInt32)uc;
-                  nblock++;
-                  es--;
-               };
+            if (nblock + es > nblockMAX) RETURN(BZ_DATA_ERROR);
+            if (s->smallDecompress) {
+               Int32 k;
+               for (k = 0; k < es; k++)
+                  s->ll16[nblock + k] = (UInt16)uc;
+            } else {
+               Int32 k;
+               UInt32 val = (UInt32)uc;
+               for (k = 0; k < es; k++)
+                  s->tt[nblock + k] = val;
+            }
+            nblock += es;
 
             continue;
 
@@ -648,6 +662,19 @@ Int32 BZ2_decompress ( DState* s )
    s->save_gLimit      = gLimit;
    s->save_gBase       = gBase;
    s->save_gPerm       = gPerm;
+
+   /* When the stream ends, return any whole bytes still buffered
+      back to the input so concatenated streams can find them. */
+   if (retVal == BZ_STREAM_END) {
+      Int32 excessBytes = s->bsLive / 8;
+      s->strm->next_in  -= excessBytes;
+      s->strm->avail_in += excessBytes;
+      if (s->strm->total_in_lo32 < (UInt32)excessBytes)
+         s->strm->total_in_hi32--;
+      s->strm->total_in_lo32 -= (UInt32)excessBytes;
+      s->bsLive = 0;
+      s->bsBuff = 0;
+   }
 
    return retVal;
 }

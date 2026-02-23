@@ -313,7 +313,7 @@ typedef
       Bool     blockRandomised;
       BZ_RAND_DECLS;
 
-      UInt32   bsBuff;
+      UInt64   bsBuff;
       Int32    bsLive;
 
       Int32    blockSize100k;
