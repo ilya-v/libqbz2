@@ -154,6 +154,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_differential.c)
     add_test(NAME differential_tests COMMAND test_differential)
 endif()
 
+# Multi-block differential tests (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_diff_multiblock.c)
+    add_executable(test_diff_multiblock tests/test_diff_multiblock.c)
+    target_link_libraries(test_diff_multiblock qbz2 dl)
+    add_test(NAME diff_multiblock_tests COMMAND test_diff_multiblock)
+endif()
+
+# FILE* I/O comprehensive tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_fileio.c)
+    add_executable(test_fileio tests/test_fileio.c)
+    target_link_libraries(test_fileio qbz2)
+    add_test(NAME fileio_tests COMMAND test_fileio)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
