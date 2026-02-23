@@ -2,7 +2,7 @@
 
 ## 1. Goal
 
-Create an API-compatible drop-in replacement for libbz2, focused on optimization (throughput, latency), to make it as fast or faster than the best-in-class competitors.
+Write a new bzip2 compression library from scratch — a clean-room rewrite, not a fork or incremental improvement of the existing libbz2 code. The new library must be an API-compatible drop-in replacement for libbz2, focused on optimization (throughput, latency), to make it as fast or faster than the best-in-class competitors. Use the original libbz2 source only as a behavioral reference for correctness, not as a starting point for the code.
 
 ## 2. API Compatibility
 
