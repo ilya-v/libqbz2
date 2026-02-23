@@ -119,6 +119,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edge_cases.c)
     add_test(NAME edge_case_tests COMMAND test_edge_cases)
 endif()
 
+# Streaming and stress tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_streaming.c)
+    add_executable(test_streaming tests/test_streaming.c)
+    target_link_libraries(test_streaming qbz2)
+    add_test(NAME streaming_tests COMMAND test_streaming)
+endif()
+
+# Advanced tests (state machines, bzopen API, concatenated streams, RLE, memory)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_advanced.c)
+    add_executable(test_advanced tests/test_advanced.c)
+    target_link_libraries(test_advanced qbz2)
+    add_test(NAME advanced_tests COMMAND test_advanced)
+endif()
+
 # Differential tests (uses dlopen for reference)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_differential.c)
     add_executable(test_differential tests/test_differential.c)
