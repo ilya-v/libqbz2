@@ -97,9 +97,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             small, 0
         );
 
-        /* Compare results */
+        /* Compare results — classify divergence type */
         if (ret_qbz2 != ret_ref) {
-            fprintf(stderr, "DIVERGENCE: decompression return code mismatch!\n");
+            int qbz2_ok = (ret_qbz2 == BZ_OK);
+            int ref_ok = (ret_ref == BZ_OK);
+            if (qbz2_ok != ref_ok) {
+                fprintf(stderr, "TRUE DIVERGENCE: decompression success/failure mismatch!\n");
+            } else {
+                fprintf(stderr, "ERROR DIVERGENCE: both failed but different error codes!\n");
+            }
             fprintf(stderr, "  input size: %zu, small=%d\n", input_size, small);
             fprintf(stderr, "  libqbz2: %d, ref: %d\n", ret_qbz2, ret_ref);
             abort();
@@ -125,7 +131,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     } else {
         /* === Compression differential test === */
         unsigned int blockSize100k = (params % 9) + 1;
-        unsigned int workFactor = 0;  /* Use default */
+        /* Vary workFactor: 0 means default (30), otherwise use fuzz-derived value.
+         * Valid range is 0-250, values > 250 are treated as 250 by libbz2. */
+        unsigned int workFactor = (input_size > 0) ? (input[0] % 251) : 0;
 
         unsigned int dest_len_qbz2 = (unsigned int)(input_size + input_size / 100 + 600 + 1);
         unsigned int dest_len_ref = dest_len_qbz2;
@@ -151,9 +159,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             blockSize100k, 0, workFactor
         );
 
-        /* Compare return codes */
+        /* Compare return codes — classify divergence type */
         if (ret_qbz2 != ret_ref) {
-            fprintf(stderr, "DIVERGENCE: compression return code mismatch!\n");
+            int qbz2_ok = (ret_qbz2 == BZ_OK);
+            int ref_ok = (ret_ref == BZ_OK);
+            if (qbz2_ok != ref_ok) {
+                fprintf(stderr, "TRUE DIVERGENCE: compression success/failure mismatch!\n");
+            } else {
+                fprintf(stderr, "ERROR DIVERGENCE: both failed but different error codes!\n");
+            }
             fprintf(stderr, "  input size: %zu, blockSize=%u, workFactor=%u\n",
                     input_size, blockSize100k, workFactor);
             fprintf(stderr, "  libqbz2: %d, ref: %d\n", ret_qbz2, ret_ref);
