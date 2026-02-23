@@ -27,6 +27,7 @@ typedef int             Int32;
 typedef unsigned int    UInt32;
 typedef short           Int16;
 typedef unsigned short  UInt16;
+typedef unsigned long long UInt64;
 
 #define True  ((Bool)1)
 #define False ((Bool)0)
@@ -206,7 +207,7 @@ typedef
       Bool     inUse[256];
       UChar    unseqToSeq[256];
 
-      UInt32   bsBuff;
+      UInt64   bsBuff;
       Int32    bsLive;
 
       UInt32   blockCRC;

@@ -24,7 +24,7 @@ static
 void bsFinishWrite ( EState* s )
 {
    while (s->bsLive > 0) {
-      s->zbits[s->numZ] = (UChar)(s->bsBuff >> 24);
+      s->zbits[s->numZ] = (UChar)(s->bsBuff >> 56);
       s->numZ++;
       s->bsBuff <<= 8;
       s->bsLive -= 8;
@@ -36,15 +36,17 @@ void bsFinishWrite ( EState* s )
  * Ensure the bitstream buffer has room for more bits by flushing
  * complete bytes to the output array.
  */
-#define bsNEEDW(nz)                           \
-{                                             \
-   while (s->bsLive >= 8) {                   \
-      s->zbits[s->numZ]                       \
-         = (UChar)(s->bsBuff >> 24);          \
-      s->numZ++;                              \
-      s->bsBuff <<= 8;                        \
-      s->bsLive -= 8;                         \
-   }                                          \
+#define bsNEEDW(nz)                                    \
+{                                                       \
+   while (s->bsLive >= 32) {                           \
+      s->zbits[s->numZ]   = (UChar)(s->bsBuff >> 56); \
+      s->zbits[s->numZ+1] = (UChar)(s->bsBuff >> 48); \
+      s->zbits[s->numZ+2] = (UChar)(s->bsBuff >> 40); \
+      s->zbits[s->numZ+3] = (UChar)(s->bsBuff >> 32); \
+      s->numZ += 4;                                    \
+      s->bsBuff <<= 32;                                \
+      s->bsLive -= 32;                                 \
+   }                                                   \
 }
 
 
@@ -56,7 +58,7 @@ __inline__
 void bsW ( EState* s, Int32 n, UInt32 v )
 {
    bsNEEDW ( n );
-   s->bsBuff |= (v << (32 - s->bsLive - n));
+   s->bsBuff |= ((UInt64)v << (64 - s->bsLive - n));
    s->bsLive += n;
 }
 
