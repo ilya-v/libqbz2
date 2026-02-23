@@ -246,12 +246,64 @@ sys.stdout.buffer.write(text[:260000].encode() if isinstance(text, str) else tex
 
 echo "  Created $(ls "$MULTIBLOCK_DIR" | wc -l) multi-block seeds"
 
+echo "=== Generating coverage seeds (targeted for code path coverage) ==="
+
+COVERAGE_DIR="$CORPUS_DIR/coverage_seeds"
+mkdir -p "$COVERAGE_DIR"
+
+# Large random data (>= 10000 bytes) to exercise mainSort path in blocksort.c
+python3 -c "
+import random, sys
+random.seed(42)
+sys.stdout.buffer.write(bytes([random.randint(0,255) for _ in range(20000)]))
+" > "$COVERAGE_DIR/large_random_20k.bin"
+
+# Large text-like data
+python3 -c "
+import random, sys
+random.seed(43)
+sys.stdout.buffer.write(bytes([random.randint(32,126) for _ in range(15000)]))
+" > "$COVERAGE_DIR/large_text_15k.bin"
+
+# Highly repetitive data to trigger SA-IS fallback in blocksort.c
+python3 -c "import sys; sys.stdout.buffer.write(b'ABABAB' * 3000)" > "$COVERAGE_DIR/repetitive_ab_18k.bin"
+python3 -c "import sys; sys.stdout.buffer.write(b'A' * 20000)" > "$COVERAGE_DIR/repeat_A_20k.bin"
+python3 -c "import sys; sys.stdout.buffer.write(b'\\x00\\xff' * 10000)" > "$COVERAGE_DIR/repeat_00ff_20k.bin"
+
+# Ascending/descending patterns
+python3 -c "import sys; sys.stdout.buffer.write(bytes([(i % 256) for i in range(20000)]))" > "$COVERAGE_DIR/ascending_20k.bin"
+python3 -c "import sys; sys.stdout.buffer.write(bytes([(255 - (i % 256)) for i in range(20000)]))" > "$COVERAGE_DIR/descending_20k.bin"
+
+# RLE-friendly pattern (varied run lengths)
+python3 -c "
+import random, sys
+random.seed(44)
+data = b''
+for i in range(100):
+    ch = bytes([i % 256])
+    data += ch * random.randint(1, 255)
+sys.stdout.buffer.write(data[:20000])
+" > "$COVERAGE_DIR/rle_pattern_20k.bin"
+
+# Small block with limited alphabet (< 10000 for fallbackSort)
+python3 -c "
+import random, sys
+random.seed(45)
+sys.stdout.buffer.write(bytes([random.randint(0,3) for _ in range(5000)]))
+" > "$COVERAGE_DIR/small_4char_5k.bin"
+
+# Block repeat pattern (long runs of different chars)
+python3 -c "import sys; sys.stdout.buffer.write(b'A' * 5000 + b'B' * 5000 + b'A' * 5000 + b'B' * 5000)" > "$COVERAGE_DIR/block_repeat_20k.bin"
+
+echo "  Created $(ls "$COVERAGE_DIR" | wc -l) coverage seeds"
+
 echo ""
 echo "=== Corpus summary ==="
 echo "  Compression seeds:   $(ls "$COMPRESS_DIR" | wc -l) files"
 echo "  Decompression seeds: $(ls "$DECOMPRESS_DIR" | wc -l) files"
 echo "  Malformed seeds:     $(ls "$MALFORMED_DIR" | wc -l) files"
 echo "  Multi-block seeds:   $(ls "$MULTIBLOCK_DIR" | wc -l) files"
+echo "  Coverage seeds:      $(ls "$COVERAGE_DIR" | wc -l) files"
 echo "  Total:               $(find "$CORPUS_DIR" -type f | wc -l) files"
 echo "  Total size:          $(du -sh "$CORPUS_DIR" | cut -f1)"
 echo ""
