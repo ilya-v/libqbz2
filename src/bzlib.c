@@ -211,9 +211,11 @@ int BZ_API(BZ2_bzCompressInit)
 static
 void add_pair_to_block ( EState* s )
 {
+   Int32 i;
    UChar ch = (UChar)(s->state_in_ch);
-   /* CRC is now computed in batch on the raw input buffer
-      in copy_input_until_stop, not per-byte here. */
+   for (i = 0; i < s->state_in_len; i++) {
+      BZ_UPDATE_CRC( s->blockCRC, ch );
+   }
    s->inUse[s->state_in_ch] = True;
    switch (s->state_in_len) {
       case 1:
@@ -263,6 +265,7 @@ void flush_RL ( EState* s )
    if (zchh != zs->state_in_ch &&                 \
        zs->state_in_len == 1) {                   \
       UChar ch = (UChar)(zs->state_in_ch);        \
+      BZ_UPDATE_CRC( zs->blockCRC, ch );          \
       zs->inUse[zs->state_in_ch] = True;          \
       zs->block[zs->nblock] = (UChar)ch;          \
       zs->nblock++;                               \
@@ -292,7 +295,6 @@ Bool copy_input_until_stop ( EState* s )
 
    if (s->mode == BZ_M_RUNNING) {
 
-      const UChar* in_start = (const UChar*)(s->strm->next_in);
       while (True) {
          if (s->nblock >= s->nblockMAX) break;
          if (s->strm->avail_in == 0) break;
@@ -303,15 +305,9 @@ Bool copy_input_until_stop ( EState* s )
          s->strm->total_in_lo32++;
          if (s->strm->total_in_lo32 == 0) s->strm->total_in_hi32++;
       }
-      {
-         UInt32 consumed = (const UChar*)(s->strm->next_in) - in_start;
-         if (consumed > 0)
-            s->blockCRC = BZ2_crc32_update( s->blockCRC, in_start, consumed );
-      }
 
    } else {
 
-      const UChar* in_start = (const UChar*)(s->strm->next_in);
       while (True) {
          if (s->nblock >= s->nblockMAX) break;
          if (s->strm->avail_in == 0) break;
@@ -323,11 +319,6 @@ Bool copy_input_until_stop ( EState* s )
          s->strm->total_in_lo32++;
          if (s->strm->total_in_lo32 == 0) s->strm->total_in_hi32++;
          s->avail_in_expect--;
-      }
-      {
-         UInt32 consumed = (const UChar*)(s->strm->next_in) - in_start;
-         if (consumed > 0)
-            s->blockCRC = BZ2_crc32_update( s->blockCRC, in_start, consumed );
       }
    }
    return progress_in;
