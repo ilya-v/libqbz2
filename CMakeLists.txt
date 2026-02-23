@@ -140,6 +140,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_roundtrip.c)
     add_test(NAME roundtrip_tests COMMAND test_roundtrip)
 endif()
 
+# Error paths and state machine coverage
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_error_paths.c)
+    add_executable(test_error_paths tests/test_error_paths.c)
+    target_link_libraries(test_error_paths qbz2)
+    add_test(NAME error_path_tests COMMAND test_error_paths)
+endif()
+
 # Differential tests (uses dlopen for reference)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_differential.c)
     add_executable(test_differential tests/test_differential.c)
