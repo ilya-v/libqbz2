@@ -224,6 +224,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_param_combos.c)
     add_test(NAME param_combo_tests COMMAND test_param_combos)
 endif()
 
+# Concatenated stream read-ahead tests (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_concat_readahead.c)
+    add_executable(test_concat_readahead tests/test_concat_readahead.c)
+    target_link_libraries(test_concat_readahead qbz2 dl)
+    add_test(NAME concat_readahead_tests COMMAND test_concat_readahead)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
