@@ -231,6 +231,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_concat_readahead.c)
     add_test(NAME concat_readahead_tests COMMAND test_concat_readahead)
 endif()
 
+# RLE/Huffman/MTF edge cases with differential verification
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rle_huffman_edge.c)
+    add_executable(test_rle_huffman_edge tests/test_rle_huffman_edge.c)
+    target_link_libraries(test_rle_huffman_edge qbz2 dl)
+    add_test(NAME rle_huffman_edge_tests COMMAND test_rle_huffman_edge)
+endif()
+
+# Block boundary bit-reader tests (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_block_boundary_bitreader.c)
+    add_executable(test_block_boundary_bitreader tests/test_block_boundary_bitreader.c)
+    target_link_libraries(test_block_boundary_bitreader qbz2 dl)
+    add_test(NAME block_boundary_bitreader_tests COMMAND test_block_boundary_bitreader)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
