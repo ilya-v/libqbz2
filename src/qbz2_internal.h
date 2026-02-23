@@ -386,14 +386,14 @@ typedef
 /*-- Decompression macros --*/
 
 #define BZ_GET_FAST(cccc)                     \
-    if (s->tPos >= (UInt32)100000 * (UInt32)s->blockSize100k) return True; \
+    if (__builtin_expect(s->tPos >= (UInt32)100000 * (UInt32)s->blockSize100k, 0)) return True; \
     s->tPos = s->tt[s->tPos];                 \
     cccc = (UChar)(s->tPos & 0xff);           \
     s->tPos >>= 8;                            \
     __builtin_prefetch(&s->tt[s->tPos], 0, 3);
 
 #define BZ_GET_FAST_C(cccc)                   \
-    if (c_tPos >= (UInt32)100000 * (UInt32)ro_blockSize100k) return True; \
+    if (__builtin_expect(c_tPos >= (UInt32)100000 * (UInt32)ro_blockSize100k, 0)) return True; \
     c_tPos = c_tt[c_tPos];                    \
     cccc = (UChar)(c_tPos & 0xff);            \
     c_tPos >>= 8;                             \
@@ -417,7 +417,7 @@ typedef
    (((UInt32)s->ll16[i]) | (GET_LL4(i) << 16))
 
 #define BZ_GET_SMALL(cccc)                            \
-    if (s->tPos >= (UInt32)100000 * (UInt32)s->blockSize100k) return True; \
+    if (__builtin_expect(s->tPos >= (UInt32)100000 * (UInt32)s->blockSize100k, 0)) return True; \
     cccc = BZ2_indexIntoF ( s->tPos, s->cftab );    \
     s->tPos = GET_LL(s->tPos);
 

@@ -645,10 +645,10 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                cs_avail_out--;
             }
          }
-         if (c_nblock_used > s_save_nblockPP)
+         if (__builtin_expect(c_nblock_used > s_save_nblockPP, 0))
             return True;
 
-         if (c_nblock_used == s_save_nblockPP) {
+         if (__builtin_expect(c_nblock_used == s_save_nblockPP, 0)) {
             c_state_out_len = 0; goto return_notr;
          };
          c_state_out_ch = c_k0;
@@ -656,17 +656,17 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
          if (k1 != c_k0) {
             c_k0 = k1; goto s_state_out_len_eq_one;
          };
-         if (c_nblock_used == s_save_nblockPP)
+         if (__builtin_expect(c_nblock_used == s_save_nblockPP, 0))
             goto s_state_out_len_eq_one;
 
          c_state_out_len = 2;
          BZ_GET_FAST_C(k1); c_nblock_used++;
-         if (c_nblock_used == s_save_nblockPP) continue;
+         if (__builtin_expect(c_nblock_used == s_save_nblockPP, 0)) continue;
          if (k1 != c_k0) { c_k0 = k1; continue; };
 
          c_state_out_len = 3;
          BZ_GET_FAST_C(k1); c_nblock_used++;
-         if (c_nblock_used == s_save_nblockPP) continue;
+         if (__builtin_expect(c_nblock_used == s_save_nblockPP, 0)) continue;
          if (k1 != c_k0) { c_k0 = k1; continue; };
 
          BZ_GET_FAST_C(k1); c_nblock_used++;
