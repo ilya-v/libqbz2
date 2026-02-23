@@ -61,10 +61,19 @@ TEST(bzopen_write_empty) {
 }
 
 TEST(bzopen_null_path) {
-    /* Reference libbz2 accepts NULL path (uses stdout/stdin) — not an error */
+    /* Reference libbz2 accepts NULL path (uses stdout/stdin) — not an error.
+     * Redirect stdout to /dev/null to suppress bz2 output. */
+    int saved = dup(STDOUT_FILENO);
+    int devnull = open("/dev/null", O_WRONLY);
+    dup2(devnull, STDOUT_FILENO);
+    close(devnull);
+
     BZFILE *bz = BZ2_bzopen(NULL, "w1");
     ASSERT(bz != NULL);
     BZ2_bzclose(bz);
+
+    dup2(saved, STDOUT_FILENO);
+    close(saved);
 }
 
 TEST(bzopen_null_mode) {
