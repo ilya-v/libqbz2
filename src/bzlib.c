@@ -332,24 +332,24 @@ Bool copy_input_until_stop ( EState* s )
 static
 Bool copy_output_until_stop ( EState* s )
 {
-   Bool progress_out = False;
+   Int32 avail = s->numZ - s->state_out_pos;
+   if (avail <= 0 || s->strm->avail_out == 0) return False;
 
-   while (True) {
+   UInt32 n = (UInt32)avail;
+   if (n > s->strm->avail_out) n = s->strm->avail_out;
 
-      if (s->strm->avail_out == 0) break;
+   memcpy(s->strm->next_out, s->zbits + s->state_out_pos, n);
+   s->state_out_pos += n;
+   s->strm->next_out += n;
+   s->strm->avail_out -= n;
 
-      if (s->state_out_pos >= s->numZ) break;
-
-      progress_out = True;
-      *(s->strm->next_out) = s->zbits[s->state_out_pos];
-      s->state_out_pos++;
-      s->strm->avail_out--;
-      s->strm->next_out++;
-      s->strm->total_out_lo32++;
-      if (s->strm->total_out_lo32 == 0) s->strm->total_out_hi32++;
+   {
+      unsigned int old = s->strm->total_out_lo32;
+      s->strm->total_out_lo32 += n;
+      if (s->strm->total_out_lo32 < old) s->strm->total_out_hi32++;
    }
 
-   return progress_out;
+   return True;
 }
 
 
