@@ -275,6 +275,47 @@ The build system must support profile-guided optimization (PGO) as a standard bu
 5. **PGO build target**: the CMake build system must provide a `pgo` build target (e.g., `cmake --build build/pgo`) that automates the full three-step process: instrumented build → training run → optimized rebuild. The PGO profile data and build artifacts go under `build/pgo/`.
 6. **PGO in benchmarks**: the official benchmark numbers reported in validation reports should include both regular and PGO results, so the full optimization potential is visible.
 
+### 6.4 Hardware-Accelerated CRC-32
+
+The bzip2 format uses CRC-32 on every byte of input (both compression and decompression). The current slicing-by-8 software implementation is a significant bottleneck, especially on high-throughput data. The library must support **hardware-accelerated CRC-32** using the x86 PCLMULQDQ (carry-less multiply) and CRC32 instructions.
+
+**Required approach:** use the Barrett reduction technique with PCLMULQDQ to process 64 bytes at a time, folding the CRC in parallel, then finalize with the scalar CRC32 instruction. This achieves ~10x throughput over slicing-by-8 on modern x86 CPUs.
+
+**Reference implementations:**
+
+- **Intel's CRC-32 with PCLMULQDQ** (white paper: "Fast CRC Computation for Generic Polynomials Using PCLMULQDQ Instruction"): the foundational algorithm. Used by the Linux kernel (`arch/x86/crypto/crc32-pclmul_glue.c`).
+- **zlib-ng** (`github.com/zlib-ng/zlib-ng`): production-quality C implementation of PCLMULQDQ-based CRC-32 with runtime CPU feature detection.
+- **ISA-L** (`github.com/intel/isa-l`): Intel's high-performance CRC implementation with similar approach.
+
+**Build-time dispatch:** the hardware CRC path must be selected at build time via CMake feature detection (check for SSE4.2 and PCLMULQDQ support). If the target CPU does not support these instructions, the build must fall back to the existing slicing-by-8 software implementation automatically. Both paths must produce identical CRC values.
+
+**Constraints:** bit-for-bit identical CRC output is mandatory — the hardware and software paths must agree exactly. The CRC polynomial is fixed by the bzip2 format (CRC-32/ISO-HDLC, polynomial 0x04C11DB7).
+
+### 6.5 Table-Based Huffman Encoding (Compression)
+
+The compression path uses bit-by-bit Huffman tree encoding, which is suboptimal. The library must replace this with a **table-based Huffman encoder** that maps each symbol directly to its code and length via a lookup table, writing codes in bulk to a wide bit buffer.
+
+**Required approach:** after building the canonical Huffman code, populate a 256-entry table where `table[symbol]` stores the code bits and code length. During encoding, look up each symbol's code and length in constant time, shift it into a 64-bit accumulator, and flush full bytes to the output buffer. This eliminates per-bit branches and enables the compiler to pipeline multiple symbols.
+
+**Constraints:** the bitstream format must not change — only the internal encode implementation. Bit-for-bit identical compressed output to the reference is mandatory.
+
+### 6.6 Stretch Goal: State-of-the-Art BWT Construction (libsais)
+
+The current SA-IS implementation may not match the performance of the latest suffix array construction libraries. As a stretch goal, evaluate and potentially integrate **libsais** (`github.com/IlyadLT/libsais`) — a modern, cache-friendly suffix array construction library that is ~65% faster than libdivsufsort on typical inputs.
+
+**Constraints:** BWT output must remain bit-for-bit identical to the reference. This is a stretch goal — prioritize correctness and other required optimizations first.
+
+### 6.7 Stretch Goal: Cache-Oblivious Inverse BWT
+
+The inverse BWT in decompression performs a pointer chase through a permutation array, which has poor cache locality on large blocks (up to 900KB). As a stretch goal, investigate **cache-oblivious** or **cache-friendly inverse BWT** algorithms that improve spatial locality.
+
+**References:**
+
+- Kärkkäinen, Kempa & Puglisi — research on cache-friendly BWT inversion achieving 2–4x speedup over the naive pointer-chase approach on large blocks.
+- The key idea: reorder the traversal to improve sequential memory access patterns, or split the inverse BWT into cache-line-sized chunks processed in order.
+
+**Constraints:** identical decompressed output is mandatory. This is a stretch goal — only pursue after all required optimizations are complete and validated.
+
 ## 7. Process
 
 - Report status to the coordinator after every meaningful step — before and after making changes, after running tests, whenever hitting a blocker. Never work silently.
