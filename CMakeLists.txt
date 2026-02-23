@@ -168,6 +168,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_fileio.c)
     add_test(NAME fileio_tests COMMAND test_fileio)
 endif()
 
+# Multi-block CRC regression and streaming edge cases
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_multiblock.c)
+    add_executable(test_multiblock tests/test_multiblock.c)
+    target_link_libraries(test_multiblock qbz2)
+    add_test(NAME multiblock_tests COMMAND test_multiblock)
+endif()
+
+# bzip2-tests corpus conformance (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzip2_corpus.c)
+    add_executable(test_bzip2_corpus tests/test_bzip2_corpus.c)
+    target_link_libraries(test_bzip2_corpus qbz2 dl)
+    add_test(NAME bzip2_corpus_tests COMMAND test_bzip2_corpus)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
