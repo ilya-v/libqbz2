@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "TeammateIdle": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "process/inject-rules-idle.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
