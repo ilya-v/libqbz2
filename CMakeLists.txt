@@ -203,6 +203,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_errors.c)
     add_test(NAME decompress_error_tests COMMAND test_decompress_errors)
 endif()
 
+# Malformed bz2 stream decompression tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_malformed.c)
+    add_executable(test_malformed tests/test_malformed.c)
+    target_link_libraries(test_malformed qbz2)
+    add_test(NAME malformed_tests COMMAND test_malformed)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
