@@ -34,6 +34,7 @@ typedef unsigned long long UInt64;
 
 #ifndef __GNUC__
 #define __inline__  /* */
+#define __builtin_prefetch(addr, ...) /* */
 #endif
 
 /*-- Assertion and diagnostic macros --*/
@@ -388,13 +389,15 @@ typedef
     if (s->tPos >= (UInt32)100000 * (UInt32)s->blockSize100k) return True; \
     s->tPos = s->tt[s->tPos];                 \
     cccc = (UChar)(s->tPos & 0xff);           \
-    s->tPos >>= 8;
+    s->tPos >>= 8;                            \
+    __builtin_prefetch(&s->tt[s->tPos], 0, 3);
 
 #define BZ_GET_FAST_C(cccc)                   \
     if (c_tPos >= (UInt32)100000 * (UInt32)ro_blockSize100k) return True; \
     c_tPos = c_tt[c_tPos];                    \
     cccc = (UChar)(c_tPos & 0xff);            \
-    c_tPos >>= 8;
+    c_tPos >>= 8;                             \
+    __builtin_prefetch(&c_tt[c_tPos], 0, 3);
 
 #define SET_LL4(i,n)                                          \
    { if (((i) & 0x1) == 0)                                    \
