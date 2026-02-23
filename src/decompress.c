@@ -583,6 +583,10 @@ Int32 BZ2_decompress ( DState* s )
          /* Compute T^(-1) directly using interleaved encoding */
          for (i = 0; i < nblock; i++) {
             uc = (UChar)(s->tt[i] & 0xff);
+            if (i + 8 < nblock) {
+               UChar uc_ahead = (UChar)(s->tt[i + 8] & 0xff);
+               __builtin_prefetch(&s->tt[s->cftab[uc_ahead]], 1, 3);
+            }
             s->tt[s->cftab[uc]] |= (i << 8);
             s->cftab[uc]++;
          }
