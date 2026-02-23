@@ -211,10 +211,16 @@ int BZ_API(BZ2_bzCompressInit)
 static
 void add_pair_to_block ( EState* s )
 {
-   Int32 i;
    UChar ch = (UChar)(s->state_in_ch);
-   for (i = 0; i < s->state_in_len; i++) {
-      BZ_UPDATE_CRC( s->blockCRC, ch );
+   if (s->state_in_len >= 8) {
+      UChar buf[256];
+      memset(buf, ch, s->state_in_len);
+      s->blockCRC = BZ2_crc32_update(s->blockCRC, buf, s->state_in_len);
+   } else {
+      Int32 i;
+      for (i = 0; i < s->state_in_len; i++) {
+         BZ_UPDATE_CRC( s->blockCRC, ch );
+      }
    }
    s->inUse[s->state_in_ch] = True;
    switch (s->state_in_len) {
