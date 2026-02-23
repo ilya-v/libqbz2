@@ -134,6 +134,8 @@ extern Int32 BZ2_rNums[512];
 
 extern UInt32 BZ2_crc32Table[256];
 
+extern UInt32 BZ2_crc32_update ( UInt32 crc, const UChar* buf, UInt32 len );
+
 #define BZ_INITIALISE_CRC(crcVar)              \
 {                                              \
    crcVar = 0xffffffffL;                       \

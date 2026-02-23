@@ -211,11 +211,9 @@ int BZ_API(BZ2_bzCompressInit)
 static
 void add_pair_to_block ( EState* s )
 {
-   Int32 i;
    UChar ch = (UChar)(s->state_in_ch);
-   for (i = 0; i < s->state_in_len; i++) {
-      BZ_UPDATE_CRC( s->blockCRC, ch );
-   }
+   /* CRC is now computed in batch on the raw input buffer
+      in copy_input_until_stop, not per-byte here. */
    s->inUse[s->state_in_ch] = True;
    switch (s->state_in_len) {
       case 1:
@@ -265,7 +263,6 @@ void flush_RL ( EState* s )
    if (zchh != zs->state_in_ch &&                 \
        zs->state_in_len == 1) {                   \
       UChar ch = (UChar)(zs->state_in_ch);        \
-      BZ_UPDATE_CRC( zs->blockCRC, ch );          \
       zs->inUse[zs->state_in_ch] = True;          \
       zs->block[zs->nblock] = (UChar)ch;          \
       zs->nblock++;                               \
@@ -295,6 +292,7 @@ Bool copy_input_until_stop ( EState* s )
 
    if (s->mode == BZ_M_RUNNING) {
 
+      const UChar* in_start = (const UChar*)(s->strm->next_in);
       while (True) {
          if (s->nblock >= s->nblockMAX) break;
          if (s->strm->avail_in == 0) break;
@@ -305,9 +303,15 @@ Bool copy_input_until_stop ( EState* s )
          s->strm->total_in_lo32++;
          if (s->strm->total_in_lo32 == 0) s->strm->total_in_hi32++;
       }
+      {
+         UInt32 consumed = (const UChar*)(s->strm->next_in) - in_start;
+         if (consumed > 0)
+            s->blockCRC = BZ2_crc32_update( s->blockCRC, in_start, consumed );
+      }
 
    } else {
 
+      const UChar* in_start = (const UChar*)(s->strm->next_in);
       while (True) {
          if (s->nblock >= s->nblockMAX) break;
          if (s->strm->avail_in == 0) break;
@@ -319,6 +323,11 @@ Bool copy_input_until_stop ( EState* s )
          s->strm->total_in_lo32++;
          if (s->strm->total_in_lo32 == 0) s->strm->total_in_hi32++;
          s->avail_in_expect--;
+      }
+      {
+         UInt32 consumed = (const UChar*)(s->strm->next_in) - in_start;
+         if (consumed > 0)
+            s->blockCRC = BZ2_crc32_update( s->blockCRC, in_start, consumed );
       }
    }
    return progress_in;
@@ -616,7 +625,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                if (cs_avail_out == 0) goto return_notr;
                if (c_state_out_len == 1) break;
                *( (UChar*)(cs_next_out) ) = c_state_out_ch;
-               BZ_UPDATE_CRC ( c_calculatedBlockCRC, c_state_out_ch );
                c_state_out_len--;
                cs_next_out++;
                cs_avail_out--;
@@ -627,7 +635,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                   c_state_out_len = 1; goto return_notr;
                };
                *( (UChar*)(cs_next_out) ) = c_state_out_ch;
-               BZ_UPDATE_CRC ( c_calculatedBlockCRC, c_state_out_ch );
                cs_next_out++;
                cs_avail_out--;
             }
@@ -666,6 +673,16 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
       s->strm->total_out_lo32 += (avail_out_INIT - cs_avail_out);
       if (s->strm->total_out_lo32 < total_out_lo32_old)
          s->strm->total_out_hi32++;
+
+      /* Batch CRC over all output bytes written in this call */
+      {
+         UInt32 n_written = avail_out_INIT - cs_avail_out;
+         if (n_written > 0)
+            c_calculatedBlockCRC = BZ2_crc32_update(
+               c_calculatedBlockCRC,
+               (const UChar*)(cs_next_out - n_written),
+               n_written );
+      }
 
       /* Save cached state back */
       s->calculatedBlockCRC = c_calculatedBlockCRC;
