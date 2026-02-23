@@ -210,6 +210,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_malformed.c)
     add_test(NAME malformed_tests COMMAND test_malformed)
 endif()
 
+# Parameter combination coverage (bs x wf x data type, differential)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_param_combos.c)
+    add_executable(test_param_combos tests/test_param_combos.c)
+    target_link_libraries(test_param_combos qbz2 dl)
+    add_test(NAME param_combo_tests COMMAND test_param_combos)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
