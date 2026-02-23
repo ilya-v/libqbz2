@@ -1,4 +1,4 @@
-# Validation Report: c50993d — branch prediction hints in hot decompression paths
+# Validation Report: c50993d — branch prediction hints for hot decompression paths
 
 **Commit:** c50993d  
 **Description:** perf: add branch prediction hints to hot decompression paths  
@@ -11,25 +11,27 @@
 |---------|----------|--------|
 | Release | gcc 15.2.1 | PASS |
 | ASAN+UBSAN | clang 21.1.8 | PASS |
-| Fuzz harnesses | clang 21.1.8 (via run-quick-fuzz.sh) | PASS |
+| Fuzz harnesses | clang 21.1.8 (libFuzzer) | PASS |
+
+All three build variants compile with zero warnings under `-Wall -Wextra -Wpedantic`.
 
 ## Unit Tests
 
 | Suite | Tests | Passed | Failed | Assertions | Time (Release) | Time (ASAN) |
 |-------|-------|--------|--------|------------|----------------|-------------|
-| test_api | 57 | 57 | 0 | 235 | 0.016s | 0.198s |
-| test_edge_cases | 67 | 67 | 0 | 60,427 | 0.035s | 0.585s |
-| test_streaming | 30 | 30 | 0 | 1,525 | 0.242s | 2.162s |
-| test_advanced | 40 | 40 | 0 | 100,870 | 0.132s | 1.245s |
-| test_roundtrip | 137 | 137 | 0 | 175 | 1.204s | 9.773s |
-| test_error_paths | 60 | 60 | 0 | 224 | 0.001s | 0.013s |
-| test_fileio | 58 | 58 | 0 | 952 | 0.069s | 0.836s |
-| test_multiblock | 33 | 33 | 0 | 197 | 0.810s | 7.517s |
-| test_blocksort_paths | 55 | 55 | 0 | 137 | 1.348s | 11.158s |
-| test_malformed | 32 | 32 | 0 | 99 | 0.014s | 0.153s |
-| test_oom | 22 | 22 | 0 | 318 | 0.029s | 0.324s |
-| test_decompress_errors | 32 | 32 | 0 | 131 | 0.011s | 0.205s |
-| **TOTAL** | **623** | **623** | **0** | **165,290** | **3.91s** | **34.17s** |
+| test_api | 57 | 57 | 0 | 235 | 0.017s | 0.188s |
+| test_edge_cases | 67 | 67 | 0 | 60,427 | 0.037s | 0.517s |
+| test_streaming | 30 | 30 | 0 | 1,525 | 0.222s | 2.059s |
+| test_advanced | 40 | 40 | 0 | 100,870 | 0.149s | 1.127s |
+| test_roundtrip | 137 | 137 | 0 | 175 | 1.167s | 9.259s |
+| test_error_paths | 60 | 60 | 0 | 224 | 0.001s | 0.014s |
+| test_fileio | 58 | 58 | 0 | 952 | 0.052s | 0.786s |
+| test_multiblock | 33 | 33 | 0 | 197 | 0.742s | 6.953s |
+| test_blocksort_paths | 55 | 55 | 0 | 137 | 1.198s | 10.186s |
+| test_malformed | 32 | 32 | 0 | 99 | 0.019s | 0.128s |
+| test_oom | 22 | 22 | 0 | 318 | 0.025s | 0.297s |
+| test_decompress_errors | 32 | 32 | 0 | 131 | 0.011s | 0.200s |
+| **TOTAL** | **623** | **623** | **0** | **165,290** | **3.64s** | **31.71s** |
 
 ## Differential Tests
 
@@ -40,81 +42,93 @@
 | test_bzip2_corpus | 162 | 162 | 0 |
 | **TOTAL** | **497** | **497** | **0** |
 
-No divergences. Branch prediction hints do not change output behavior.
+Differential testing covers all block sizes (1-9), multiple work factors, streaming/buffer-to-buffer/FILE* APIs, and the bzip2-tests external corpus. Error behavior tested: when both libraries reject an input, error codes are compared. Zero divergences — branch prediction hints produce identical output and identical error behavior.
 
 ## ASAN+UBSAN
 
 - **Tests run:** 623 (full suite under clang ASAN+UBSAN)
 - **ASAN errors:** 0
 - **UBSAN errors:** 0
-- **Time:** 34.17s
+- **Time:** 31.71s
 
 ## Quick Fuzz
 
-| Harness | Runs (approx) | Crashes | Divergences | Time |
-|---------|---------------|---------|-------------|------|
-| fuzz_compress | ~750 | 0 | N/A | 10s |
-| fuzz_decompress | ~750 | 0 | N/A | 10s (killed by budget on pass 2) |
-| fuzz_differential | ~750 | 0 | 0 | 10s |
-| fuzz_diff_streaming | ~750 | 0 | 0 | 10s |
-| **TOTAL** | **~3000** | **0** | **0** | **~60s (2 passes)** |
+| Harness | Runs | Exec/sec | Crashes | Divergences | Time |
+|---------|------|----------|---------|-------------|------|
+| fuzz_compress | 49 | 4 | 0 | N/A | ~12s |
+| fuzz_decompress | 485 | 17 | 0 | N/A | ~27s (killed by budget timer) |
+| fuzz_differential | 485 | 18 | 0 | 0 | ~26s |
+| fuzz_diff_streaming | 485 | 17 | 0 | 0 | ~27s |
+| **TOTAL** | **1,504** | — | **0** | **0** | **~30s budget** |
 
-All ASAN-enabled, 0 crashes, 0 divergences.
+All 4 harnesses ran with ASAN enabled. Zero crashes. Zero divergences (differential and streaming differential harnesses). fuzz_decompress was killed by the 30s budget timer on the second pass (not an error — expected behavior).
 
 ## Benchmarks
 
-Benchmarks run twice; system under moderate load from concurrent agents. Numbers show some noise but overall trend is consistent.
+Best-of-3 runs (system under varying load, so some variance across runs):
 
-### Run 1
+### Compression Throughput (MB/s)
 
-| Workload | BS | qbz2 C (MB/s) | ref C (MB/s) | C Speedup | qbz2 D (MB/s) | ref D (MB/s) | D Speedup |
-|----------|----|---------------|-------------|-----------|---------------|-------------|-----------|
-| text-100k | 1 | 16.90 | 14.36 | **1.18x** | 80.02 | 79.16 | **1.01x** |
-| text-100k | 5 | 16.86 | 14.13 | **1.19x** | 78.54 | 76.50 | **1.03x** |
-| text-100k | 9 | 16.93 | 14.38 | **1.18x** | 80.00 | 78.37 | **1.02x** |
-| binary-100k | 1 | 10.74 | 10.63 | **1.01x** | 19.87 | 20.66 | 0.96x |
-| binary-100k | 5 | 10.28 | 11.81 | 0.87x | 28.93 | 30.23 | 0.96x |
-| binary-100k | 9 | 14.45 | 14.10 | **1.02x** | 25.81 | 27.68 | 0.93x |
-| repeated-100k | 1 | 15.94 | 10.69 | **1.49x** | 345.52 | 274.52 | **1.26x** |
-| repeated-100k | 5 | 19.60 | 13.86 | **1.41x** | 371.76 | 351.44 | **1.06x** |
-| repeated-100k | 9 | 15.22 | 11.33 | **1.34x** | 354.37 | 361.24 | 0.98x |
-| zeros-100k | 1 | 442.48 | 263.91 | **1.68x** | 1940.37 | 501.48 | **3.87x** |
-| zeros-100k | 5 | 473.73 | 280.19 | **1.69x** | 1963.66 | 505.18 | **3.89x** |
-| zeros-100k | 9 | 483.80 | 282.58 | **1.71x** | 1926.65 | 501.83 | **3.84x** |
+| Workload | BS | qbz2 | ref | Speedup |
+|----------|----|-----:|----:|--------:|
+| text-100k | 1 | 21.26 | 19.36 | **1.10x** |
+| text-100k | 5 | 26.94 | 23.02 | **1.17x** |
+| text-100k | 9 | 27.82 | 22.28 | **1.25x** |
+| binary-100k | 1 | 16.75 | 17.07 | 0.98x |
+| binary-100k | 5 | 16.96 | 16.18 | **1.05x** |
+| binary-100k | 9 | 16.24 | 16.37 | 0.99x |
+| repeated-100k | 1 | 23.44 | 13.44 | **1.74x** |
+| repeated-100k | 5 | 23.43 | 17.26 | **1.36x** |
+| repeated-100k | 9 | 23.00 | 16.85 | **1.37x** |
+| zeros-100k | 1 | 514.51 | 313.05 | **1.64x** |
+| zeros-100k | 5 | 530.61 | 313.95 | **1.69x** |
+| zeros-100k | 9 | 521.21 | 316.47 | **1.65x** |
 
-### Run 2
+### Decompression Throughput (MB/s)
 
-| Workload | BS | qbz2 C (MB/s) | ref C (MB/s) | C Speedup | qbz2 D (MB/s) | ref D (MB/s) | D Speedup |
-|----------|----|---------------|-------------|-----------|---------------|-------------|-----------|
-| text-100k | 1 | 16.41 | 14.18 | **1.16x** | 75.90 | 70.73 | **1.07x** |
-| text-100k | 5 | 16.22 | 13.98 | **1.16x** | 74.27 | 72.42 | **1.03x** |
-| text-100k | 9 | 14.52 | 13.48 | **1.08x** | 67.51 | 76.35 | 0.88x |
-| binary-100k | 1 | 10.21 | 10.50 | 0.97x | 20.28 | 18.53 | **1.09x** |
-| binary-100k | 5 | 10.22 | 9.65 | **1.06x** | 19.66 | 21.22 | 0.93x |
-| binary-100k | 9 | 9.87 | 10.29 | 0.96x | 21.37 | 21.59 | 0.99x |
-| repeated-100k | 1 | 18.78 | 12.06 | **1.56x** | 368.50 | 364.34 | **1.01x** |
-| repeated-100k | 5 | 19.54 | 11.59 | **1.69x** | 273.76 | 270.46 | **1.01x** |
-| repeated-100k | 9 | 19.10 | 14.85 | **1.29x** | 361.30 | 375.53 | 0.96x |
-| zeros-100k | 1 | 457.47 | 268.46 | **1.70x** | 2003.21 | 514.46 | **3.89x** |
-| zeros-100k | 5 | 503.48 | 285.60 | **1.76x** | 2018.18 | 518.29 | **3.89x** |
-| zeros-100k | 9 | 487.61 | 285.10 | **1.71x** | 2002.12 | 518.28 | **3.86x** |
+| Workload | BS | qbz2 | ref | Speedup |
+|----------|----|-----:|----:|--------:|
+| text-100k | 1 | 127.42 | 123.80 | **1.03x** |
+| text-100k | 5 | 129.28 | 126.81 | **1.02x** |
+| text-100k | 9 | 125.66 | 124.02 | **1.01x** |
+| binary-100k | 1 | 32.98 | 32.74 | **1.01x** |
+| binary-100k | 5 | 33.58 | 33.64 | 1.00x |
+| binary-100k | 9 | 34.22 | 34.15 | 1.00x |
+| repeated-100k | 1 | 421.16 | 413.67 | **1.02x** |
+| repeated-100k | 5 | 427.14 | 416.71 | **1.03x** |
+| repeated-100k | 9 | 415.14 | 424.89 | 0.98x |
+| zeros-100k | 1 | 2228.61 | 582.38 | **3.83x** |
+| zeros-100k | 5 | 2253.11 | 574.99 | **3.92x** |
+| zeros-100k | 9 | 2234.77 | 587.84 | **3.80x** |
 
-### Benchmark Analysis
+### Speedup Summary vs Previous Commit (a8609e9)
 
-- **Text decompression**: 1.01-1.07x (some noise, generally above parity)
-- **Binary decompression**: 0.93-1.09x (high variance, noisy workload on this system)
-- **Repeated decompression**: 0.96-1.26x (variable, mostly at or above parity)
-- **Zeros decompression**: 3.84-3.89x (stable, excellent)
-- **Compression**: unchanged as expected (this commit only modifies decompression paths)
+| Category | Range | Best | vs a8609e9 |
+|----------|-------|------|------------|
+| Compression — text | 1.10x-1.25x | **1.25x** | Stable (was 1.17x-1.56x; noise-dominated at BS1) |
+| Compression — repeated | 1.36x-1.74x | **1.74x** | Stable |
+| Compression — binary | 0.98x-1.05x | 1.05x | Stable (at parity) |
+| Compression — zeros | 1.64x-1.69x | **1.69x** | Stable (was 1.67x-1.74x) |
+| Decompression — text | 1.01x-1.03x | **1.03x** | Stable |
+| Decompression — binary | 1.00x-1.01x | 1.01x | Stable |
+| Decompression — repeated | 0.98x-1.03x | **1.03x** | Stable |
+| Decompression — zeros | 3.80x-3.92x | **3.92x** | Stable (was 3.88x-3.90x) |
 
-Note: Absolute throughput numbers are lower than previous validations due to system load from concurrent agents. The relative speedup ratios are the meaningful metric, and both runs reference the same-run reference numbers.
+The branch prediction hints are expected to have marginal impact on microbenchmarks — the main benefit is in hot loop code layout which is more visible in sustained workloads. No measurable regression and no measurable improvement in this benchmark suite (within noise). This is expected for `__builtin_expect` annotations which primarily help the compiler's static branch predictor.
 
 ## Known Issues
 
-No known pre-existing divergences, bugs, or test failures.
+| # | Description | Severity | Introduced | Status |
+|---|------------|----------|-----------|--------|
+| 1 | Multi-block CRC mismatch from compression-side batch CRC | CRITICAL | dffe019 | **FIXED** in f50bd8f |
+| 2 | Text decompression regression: 0.85x-0.96x vs reference | Medium | d127012 | **FIXED** in 1f048d6 |
+| 3 | Concatenated bz2 streams: BZ2_bzBuffToBuffDecompress only decompresses first stream | Low | Matches reference behavior | wontfix |
+| 4 | Binary compression ~0.98x-1.05x vs reference | Low | e6a09d5 | Open — incompressible data at parity |
+
+No known divergences. No known crashes. No pre-existing test failures.
 
 ## Summary
 
-**PASS.** Commit c50993d (branch prediction hints in hot decompression paths) passes all validation stages cleanly. 623/623 unit tests pass in both Release and ASAN+UBSAN modes, 497/497 differential tests with zero divergences, ~3000 fuzz runs with 0 crashes and 0 divergences. Benchmarks show stable performance with zeros decompression maintaining ~3.87x speedup. Branch prediction hints are correctness-safe and do not regress performance. Binary workload numbers show high variance due to system contention but no systematic regression.
+**PASS.** Commit c50993d (branch prediction hints for hot decompression paths) passes all validation stages cleanly. 623/623 unit tests pass in both Release and ASAN+UBSAN modes (165,290 assertions across 12 suites), 497/497 differential tests show zero divergences, 1,504 fuzz executions with 0 crashes and 0 divergences, and all ASAN+UBSAN checks clean. Benchmarks show no regressions and no measurable improvement — this is expected for `__builtin_expect` annotations which primarily help the compiler's code layout decisions rather than producing large throughput changes on short benchmarks. The commit changes only `__builtin_expect` wrappers on existing conditionals in `src/bzlib.c` and `src/qbz2_internal.h`, with zero algorithmic changes, so the correctness risk is negligible and the results confirm this.
 
-**Total validation time:** ~4m13s
+**Total validation time:** ~2m15s
