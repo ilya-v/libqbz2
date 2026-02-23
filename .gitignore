@@ -1,0 +1,26 @@
+# Build output
+build/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+
+# Test output (transient)
+test-output/
+
+# Worktrees
+.worktree/
+
+# Reference build artifacts
+reference/build/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs
+logs/
