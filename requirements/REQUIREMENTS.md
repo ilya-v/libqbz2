@@ -251,7 +251,20 @@ All optimization work must be guided by profiling data, not by intuition or gues
 4. **SIMD is required where applicable**: the BWT inverse, MTF decode, Huffman decode, CRC computation, and RLE encoding/decoding are all candidates for SIMD (SSE2/AVX2) vectorization. Scalar-only implementations of these hot loops are not acceptable as a final state — evaluate SIMD for every hot inner loop identified by the profiler.
 5. **No "optimizations exhausted" without data**: do not declare optimization complete without a profiler report showing that the remaining hot paths are at the theoretical throughput limit (memory bandwidth, instruction throughput, or data dependency chains). If the profiler shows headroom, keep optimizing.
 
-### 6.2 Profile-Guided Optimization (PGO)
+### 6.2 Table-Based Huffman Decoding
+
+The bzip2 reference implementation uses tree-walking Huffman decoding, which is slow due to branch mispredictions and poor instruction-level parallelism. The library must replace this with a **table-based branchless decoder**.
+
+**Required approach:** pre-compute a lookup table indexed by the next N bits of the bitstream. Each table entry stores the decoded symbol and the number of bits consumed (`symbol | nbBits`). A single table lookup replaces the entire tree walk. Since bzip2 uses canonical Huffman codes with lengths up to 20 bits, use a two-level table: a primary table covering short codes (e.g., up to 11 bits, 2048 entries) and an overflow table for longer codes. Use unaligned 64-bit reads for branchless bit buffer refill.
+
+**Reference implementations:**
+
+- **libdeflate** (`github.com/ebiggers/libdeflate`): table-based Huffman decoder, 2x faster than zlib. Clean C, good reference for two-level table construction.
+- **Fabian Giesen's Oodle/Kraken blog** (`fgiesen.wordpress.com/2021/08/30/entropy-coding-in-oodle-data-huffman-coding/`): detailed analysis of table design trade-offs, achieving 250–373 MB/s.
+
+**Constraints:** the bitstream format must not change — only the internal decode implementation. Bit-for-bit identical output to the reference is mandatory.
+
+### 6.3 Profile-Guided Optimization (PGO)
 
 The build system must support profile-guided optimization (PGO) as a standard build mode:
 
