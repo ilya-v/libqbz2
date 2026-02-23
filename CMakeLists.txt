@@ -210,6 +210,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_malformed.c)
     add_test(NAME malformed_tests COMMAND test_malformed)
 endif()
 
+# Streaming API state machine edge cases
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_streaming_edge.c)
+    add_executable(test_streaming_edge tests/test_streaming_edge.c)
+    target_link_libraries(test_streaming_edge qbz2)
+    add_test(NAME streaming_edge_tests COMMAND test_streaming_edge)
+endif()
+
 # Parameter combination coverage (bs x wf x data type, differential)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_param_combos.c)
     add_executable(test_param_combos tests/test_param_combos.c)
