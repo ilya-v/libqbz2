@@ -102,6 +102,23 @@ if(ENABLE_SANITIZERS)
     target_link_options(bz2_ref PRIVATE -fsanitize=address,undefined)
 endif()
 
+# --- PGO (Profile-Guided Optimization) support ---
+# Training driver used by the PGO build script
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tools/pgo_training.c)
+    add_executable(pgo_training tools/pgo_training.c)
+    target_link_libraries(pgo_training qbz2)
+endif()
+
+# Custom target: run the full PGO build pipeline
+# Usage: cmake --build build --target pgo
+add_custom_target(pgo
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/pgo-build.sh
+            gcc ${CMAKE_CURRENT_SOURCE_DIR}/build/pgo
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Running PGO build pipeline (instrument -> train -> optimize)"
+    VERBATIM
+)
+
 # --- Test and benchmark targets (tester-owned) ---
 enable_testing()
 
