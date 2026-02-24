@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include "bzlib.h"
 
 static unsigned char *read_file(const char *path, size_t *size) {
@@ -192,6 +194,171 @@ static void exercise_bzopen(const unsigned char *data, size_t size) {
     }
 }
 
+static void exercise_flush_path(const unsigned char *data, size_t size) {
+    /* Exercise BZ_FLUSH compression path — the BZ_M_FLUSHING state */
+    if (size < 2) return;
+    bz_stream strm;
+    memset(&strm, 0, sizeof(strm));
+    if (BZ2_bzCompressInit(&strm, 1, 0, 0) != BZ_OK) return;
+
+    size_t out_cap = size + size / 100 + 700;
+    if (out_cap < 700) out_cap = 700;
+    char *out = malloc(out_cap);
+    if (!out) { BZ2_bzCompressEnd(&strm); return; }
+
+    /* Feed half the data, then FLUSH, then finish */
+    size_t half = size / 2;
+    strm.next_in = (char *)data;
+    strm.avail_in = (unsigned int)half;
+    strm.next_out = out;
+    strm.avail_out = (unsigned int)out_cap;
+
+    int ret = BZ2_bzCompress(&strm, BZ_RUN);
+    if (ret == BZ_RUN_OK) {
+        /* Now flush */
+        ret = BZ2_bzCompress(&strm, BZ_FLUSH);
+        while (ret == BZ_FLUSH_OK) {
+            ret = BZ2_bzCompress(&strm, BZ_FLUSH);
+        }
+        /* Feed second half and finish */
+        if (ret == BZ_RUN_OK) {
+            strm.next_in = (char *)data + half;
+            strm.avail_in = (unsigned int)(size - half);
+            ret = BZ2_bzCompress(&strm, BZ_RUN);
+            if (ret == BZ_RUN_OK) {
+                strm.avail_in = 0;
+                do {
+                    ret = BZ2_bzCompress(&strm, BZ_FINISH);
+                } while (ret == BZ_FINISH_OK);
+            }
+        }
+    }
+    BZ2_bzCompressEnd(&strm);
+    free(out);
+}
+
+static void exercise_outbuff_full(const unsigned char *data, size_t size) {
+    /* Exercise BZ_OUTBUFF_FULL paths with undersized output buffers */
+    if (size == 0) return;
+
+    /* Compress with too-small output buffer */
+    unsigned int tiny_len = 1;
+    char tiny[1];
+    BZ2_bzBuffToBuffCompress(tiny, &tiny_len, (char *)data,
+                             (unsigned int)(size > 1000 ? 1000 : size), 1, 0, 0);
+
+    /* Decompress with too-small output buffer (only if input looks like bz2) */
+    if (size >= 4 && data[0] == 'B' && data[1] == 'Z' && data[2] == 'h') {
+        tiny_len = 1;
+        BZ2_bzBuffToBuffDecompress(tiny, &tiny_len, (char *)data,
+                                   (unsigned int)size, 0, 0);
+    }
+}
+
+static void exercise_randomised_block(void) {
+    /* Create a valid bz2 stream and flip the randomization bit to exercise
+     * the blockRandomised code path in both FAST and SMALL decompression.
+     *
+     * Block header: stream header "BZhN" (4 bytes), then block magic
+     * 6 bytes (0x314159265359) + 4 bytes CRC + 1 bit randomised flag.
+     * The randomised bit is at byte offset 14, bit 7 (MSB). */
+    const char *input = "hello world test data for randomised block coverage";
+    unsigned int src_len = (unsigned int)strlen(input);
+    unsigned int comp_len = src_len + src_len / 100 + 700;
+    char *comp = malloc(comp_len);
+    if (!comp) return;
+
+    int ret = BZ2_bzBuffToBuffCompress(comp, &comp_len, (char *)input,
+                                       src_len, 1, 0, 0);
+    if (ret != BZ_OK) { free(comp); return; }
+
+    /* Flip the randomised bit at byte 14 */
+    if (comp_len > 14) {
+        comp[14] ^= 0x80;
+    }
+
+    /* Try decompressing with FAST mode (small=0) — will likely get
+     * BZ_DATA_ERROR due to CRC mismatch but exercises the code path */
+    unsigned int decomp_len = 4 * 1024 * 1024;
+    char *decomp = malloc(decomp_len);
+    if (decomp) {
+        BZ2_bzBuffToBuffDecompress(decomp, &decomp_len, comp,
+                                   comp_len, 0, 0);
+        free(decomp);
+    }
+
+    /* Try decompressing with SMALL mode (small=1) */
+    decomp_len = 4 * 1024 * 1024;
+    decomp = malloc(decomp_len);
+    if (decomp) {
+        BZ2_bzBuffToBuffDecompress(decomp, &decomp_len, comp,
+                                   comp_len, 1, 0);
+        free(decomp);
+    }
+
+    free(comp);
+}
+
+static void exercise_bzdopen(const unsigned char *data, size_t size) {
+    /* Exercise BZ2_bzdopen — fd-based file open */
+    const char *tmppath = "/tmp/cov_bzdopen_test.bz2";
+
+    /* Write via bzdopen */
+    int fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        BZFILE *bz = BZ2_bzdopen(fd, "wb1");
+        if (bz) {
+            BZ2_bzwrite(bz, (void *)data,
+                        (int)(size > 10000 ? 10000 : size));
+            BZ2_bzclose(bz);
+        } else {
+            close(fd);
+        }
+    }
+
+    /* Read back via bzdopen */
+    fd = open(tmppath, O_RDONLY);
+    if (fd >= 0) {
+        BZFILE *bz = BZ2_bzdopen(fd, "rb");
+        if (bz) {
+            char buf[4096];
+            while (BZ2_bzread(bz, buf, sizeof(buf)) > 0) {}
+            BZ2_bzclose(bz);
+        } else {
+            close(fd);
+        }
+    }
+    remove(tmppath);
+}
+
+static void exercise_small_buffer_decompress(const unsigned char *data, size_t size) {
+    /* Streaming decompress with tiny output buffer to exercise the
+     * avail_out==0 drain loops in unRLE_obuf_to_output_FAST/SMALL */
+    if (size < 4 || data[0] != 'B' || data[1] != 'Z' || data[2] != 'h') return;
+
+    for (int small = 0; small <= 1; small++) {
+        bz_stream strm;
+        memset(&strm, 0, sizeof(strm));
+        if (BZ2_bzDecompressInit(&strm, 0, small) != BZ_OK) continue;
+
+        strm.next_in = (char *)data;
+        strm.avail_in = (unsigned int)size;
+
+        char out[64];  /* tiny output buffer */
+        int ret;
+        unsigned int total = 0;
+        do {
+            strm.next_out = out;
+            strm.avail_out = sizeof(out);
+            ret = BZ2_bzDecompress(&strm);
+            total += sizeof(out) - strm.avail_out;
+            if (total > 4 * 1024 * 1024) break;  /* safety limit */
+        } while (ret == BZ_OK);
+
+        BZ2_bzDecompressEnd(&strm);
+    }
+}
+
 static void exercise_param_errors(void) {
     /* Parameter validation paths — clean up after any successful init */
     bz_stream strm;
@@ -236,6 +403,7 @@ static void exercise_param_errors(void) {
 
 int main(int argc, char **argv) {
     exercise_param_errors();
+    exercise_randomised_block();
 
     for (int i = 1; i < argc; i++) {
         size_t size;
@@ -245,14 +413,20 @@ int main(int argc, char **argv) {
         /* Try as uncompressed input (compress it) */
         exercise_compress(data, size);
         exercise_streaming_compress(data, size);
+        exercise_flush_path(data, size);
 
         /* Try as compressed input (decompress it) */
         exercise_decompress(data, size);
         exercise_streaming_decompress(data, size);
+        exercise_small_buffer_decompress(data, size);
+
+        /* Exercise output buffer overflow paths */
+        exercise_outbuff_full(data, size);
 
         /* Exercise FILE* API */
         exercise_fileio_write_read(data, size);
         exercise_bzopen(data, size);
+        exercise_bzdopen(data, size);
 
         free(data);
     }
