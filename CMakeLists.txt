@@ -317,6 +317,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzlib_branches.c)
     add_test(NAME bzlib_branch_tests COMMAND test_bzlib_branches)
 endif()
 
+# blocksort.c branch coverage tests (fallbackSort internals, threshold boundary)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_blocksort_branches.c)
+    add_executable(test_blocksort_branches tests/test_blocksort_branches.c)
+    target_link_libraries(test_blocksort_branches qbz2)
+    add_test(NAME blocksort_branch_tests COMMAND test_blocksort_branches)
+endif()
+
 # compress.c branch coverage tests (nGroups thresholds, Huffman tooLong, etc.)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compress_branches.c)
     add_executable(test_compress_branches tests/test_compress_branches.c)
