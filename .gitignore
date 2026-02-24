@@ -12,8 +12,10 @@ test-output/
 # Worktrees
 .worktree/
 
-# Reference build artifacts
+# Reference build artifacts and vendored sources
 reference/build/
+reference/bzip2-tests/
+reference/libsais/
 
 # Editor files
 *.swp
