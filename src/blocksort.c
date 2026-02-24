@@ -27,16 +27,17 @@
  *
  * This produces the exact same BWT as bzip2's reference implementation.
  */
-static void sais_bwt ( UChar* block, UInt32* ptr, Int32 nblock, Int32* origPtr )
+static void sais_bwt ( bz_stream* strm, UChar* block, UInt32* ptr,
+                       Int32 nblock, Int32* origPtr )
 {
    UChar  *doubled;
    int32_t *SA;
    Int32  dlen, i, j;
 
    dlen = 2 * nblock;
-   doubled = (UChar *)malloc((size_t)dlen);
-   SA = (int32_t *)malloc((size_t)dlen * sizeof(int32_t));
-   if (!doubled || !SA) { free(doubled); free(SA); return; }
+   doubled = (UChar *)BZALLOC( (size_t)dlen );
+   SA = (int32_t *)BZALLOC( (size_t)dlen * sizeof(int32_t) );
+   if (!doubled || !SA) { BZFREE(doubled); BZFREE(SA); return; }
 
    memcpy(doubled, block, (size_t)nblock);
    memcpy(doubled + nblock, block, (size_t)nblock);
@@ -44,8 +45,8 @@ static void sais_bwt ( UChar* block, UInt32* ptr, Int32 nblock, Int32* origPtr )
    /* libsais builds SA[0..dlen-1] with no sentinel slot */
    if (libsais(doubled, SA, (int32_t)dlen, 0, NULL) != 0) {
       /* SA construction failed -- fall through with origPtr = -1 */
-      free(doubled);
-      free(SA);
+      BZFREE(doubled);
+      BZFREE(SA);
       return;
    }
 
@@ -58,8 +59,8 @@ static void sais_bwt ( UChar* block, UInt32* ptr, Int32 nblock, Int32* origPtr )
          j++;
       }
    }
-   free(doubled);
-   free(SA);
+   BZFREE(doubled);
+   BZFREE(SA);
 }
 
 
@@ -359,7 +360,7 @@ void BZ2_blockSort ( EState* s )
        * only a minor cost on random binary data (still at parity
        * with the reference implementation).
        */
-      sais_bwt ( block, ptr, nblock, &(s->origPtr) );
+      sais_bwt ( s->strm, block, ptr, nblock, &(s->origPtr) );
       AssertH( s->origPtr != -1, 1003 );
       return;
    }
