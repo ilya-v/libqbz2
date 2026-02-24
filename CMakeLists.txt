@@ -269,6 +269,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compress_states.c)
     add_test(NAME compress_states_tests COMMAND test_compress_states)
 endif()
 
+# Buffer-to-buffer API edge cases and small-mode decompression
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bufftobuff_edge.c)
+    add_executable(test_bufftobuff_edge tests/test_bufftobuff_edge.c)
+    target_link_libraries(test_bufftobuff_edge qbz2)
+    add_test(NAME bufftobuff_edge_tests COMMAND test_bufftobuff_edge)
+endif()
+
 # Huffman decode OOB regression tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_huffman_decode_oob.c)
     add_executable(test_huffman_decode_oob tests/test_huffman_decode_oob.c)
