@@ -317,6 +317,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzlib_branches.c)
     add_test(NAME bzlib_branch_tests COMMAND test_bzlib_branches)
 endif()
 
+# compress.c branch coverage tests (nGroups thresholds, Huffman tooLong, etc.)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compress_branches.c)
+    add_executable(test_compress_branches tests/test_compress_branches.c)
+    target_link_libraries(test_compress_branches qbz2)
+    add_test(NAME compress_branch_tests COMMAND test_compress_branches)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
