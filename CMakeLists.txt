@@ -346,6 +346,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_crc32_internal.c)
     add_test(NAME crc32_internal_tests COMMAND test_crc32_internal)
 endif()
 
+# Streaming state machine tests (compression/decompression transitions)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_streaming_states.c)
+    add_executable(test_streaming_states tests/test_streaming_states.c)
+    target_link_libraries(test_streaming_states qbz2)
+    add_test(NAME streaming_state_tests COMMAND test_streaming_states)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
