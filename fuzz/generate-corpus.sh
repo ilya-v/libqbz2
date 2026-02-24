@@ -248,19 +248,38 @@ echo "  Created $(ls "$MULTIBLOCK_DIR" | wc -l) multi-block seeds"
 
 echo "=== Integrating bzip2-tests external repository seeds ==="
 
-BZ2TESTS_DIR="$SCRIPT_DIR/../reference/bzip2-tests"
+BZ2TESTS_DIR="$SCRIPT_DIR/../test-output/bzip2-tests"
 BZIP2TESTS_SEED_DIR="$CORPUS_DIR/bzip2_tests_seeds"
-mkdir -p "$BZIP2TESTS_SEED_DIR"
+BZIP2TESTS_BAD_DIR="$CORPUS_DIR/bzip2_tests_bad"
+mkdir -p "$BZIP2TESTS_SEED_DIR" "$BZIP2TESTS_BAD_DIR"
 
-if [ -d "$BZ2TESTS_DIR" ]; then
-    find "$BZ2TESTS_DIR" -name '*.bz2' -type f | while read -r f; do
+# Auto-clone if not available
+if [ ! -d "$BZ2TESTS_DIR" ]; then
+    echo "  Cloning bzip2-tests repository..."
+    git clone --quiet git://sourceware.org/git/bzip2-tests.git "$BZ2TESTS_DIR" 2>/dev/null || {
+        echo "  WARNING: Failed to clone bzip2-tests repo"
+        BZ2TESTS_DIR=""
+    }
+fi
+
+if [ -n "$BZ2TESTS_DIR" ] && [ -d "$BZ2TESTS_DIR" ]; then
+    # Copy valid .bz2 files (flattened with directory prefix)
+    find "$BZ2TESTS_DIR" -name '*.bz2' -not -name '*.bz2.bad' -not -path '*/.git/*' -type f | while read -r f; do
         relpath="${f#$BZ2TESTS_DIR/}"
         safename="$(echo "$relpath" | tr '/' '_')"
         cp "$f" "$BZIP2TESTS_SEED_DIR/$safename"
     done
-    echo "  Copied $(ls "$BZIP2TESTS_SEED_DIR" | wc -l) bzip2-tests seed files"
+    echo "  Copied $(ls "$BZIP2TESTS_SEED_DIR" | wc -l) valid bz2 files from bzip2-tests"
+
+    # Copy malformed .bz2.bad files for error-handling testing
+    find "$BZ2TESTS_DIR" -name '*.bz2.bad' -not -path '*/.git/*' -type f | while read -r f; do
+        relpath="${f#$BZ2TESTS_DIR/}"
+        safename="$(echo "$relpath" | tr '/' '_')"
+        cp "$f" "$BZIP2TESTS_BAD_DIR/$safename"
+    done
+    echo "  Copied $(ls "$BZIP2TESTS_BAD_DIR" | wc -l) malformed bz2 files from bzip2-tests"
 else
-    echo "  WARNING: bzip2-tests repo not found at $BZ2TESTS_DIR"
+    echo "  WARNING: bzip2-tests repo not available"
     echo "  Clone with: git clone git://sourceware.org/git/bzip2-tests.git $BZ2TESTS_DIR"
 fi
 
@@ -322,7 +341,8 @@ echo "  Decompression seeds: $(ls "$DECOMPRESS_DIR" | wc -l) files"
 echo "  Malformed seeds:     $(ls "$MALFORMED_DIR" | wc -l) files"
 echo "  Multi-block seeds:   $(ls "$MULTIBLOCK_DIR" | wc -l) files"
 echo "  Coverage seeds:      $(ls "$COVERAGE_DIR" | wc -l) files"
-echo "  bzip2-tests seeds:   $(ls "$BZIP2TESTS_SEED_DIR" 2>/dev/null | wc -l) files"
+echo "  bzip2-tests valid:   $(ls "$BZIP2TESTS_SEED_DIR" 2>/dev/null | wc -l) files"
+echo "  bzip2-tests bad:    $(ls "$BZIP2TESTS_BAD_DIR" 2>/dev/null | wc -l) files"
 echo "  Total:               $(find "$CORPUS_DIR" -type f | wc -l) files"
 echo "  Total size:          $(du -sh "$CORPUS_DIR" | cut -f1)"
 echo ""
