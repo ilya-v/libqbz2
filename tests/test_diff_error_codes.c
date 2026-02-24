@@ -494,21 +494,14 @@ TEST(streaming_error_comparison)
 
 TEST(summary)
 {
-    /* Known divergences as of 0326d27: 4 bitflip divergences where qbz2 is
-     * stricter than the reference (BZ_DATA_ERROR vs BZ_OK on bit-flipped
-     * Huffman code length / selector bytes). Filed as conformance bug.
-     * Positions: byte 29 bits 5,7; byte 30 bits 3,5 in "bit flip sweep data" bs=1.
+    /* Previously had 4 known divergences (bitflip positions where qbz2 rejected
+     * degenerate Huffman codes that the reference accepted). Fixed in 5ba2e2c by
+     * gracefully degrading the fast Huffman table instead of rejecting.
      */
-    int known_divergences = 4;
-    int new_divergences = total_divergences - known_divergences;
-    if (new_divergences < 0) new_divergences = 0;
-
     printf("\nDifferential error code comparison:\n");
     printf("  Total comparisons: %d\n", total_compared);
     printf("  Total divergences: %d\n", total_divergences);
-    printf("  Known divergences: %d (bitflip strictness, conformance bug filed)\n", known_divergences);
-    printf("  New divergences: %d\n", new_divergences);
-    ASSERT(new_divergences == 0);
+    ASSERT(total_divergences == 0);
     ASSERT(total_compared > 100);
 }
 
