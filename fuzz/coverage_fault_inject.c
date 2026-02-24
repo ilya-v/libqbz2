@@ -119,25 +119,37 @@ static void exercise_write_io_errors(void) {
      * Signal SIGPIPE to SIG_IGN to prevent process termination. */
     signal(SIGPIPE, SIG_IGN);
 
-    /* 1. BZ2_bzWrite with ferror on handle */
+    /* 1. BZ2_bzWrite with fwrite failure in the compress loop.
+     * Need to write enough data that the compressed output overflows
+     * the pipe buffer (~64KB). Use block size 1 (100KB) to ensure
+     * compressed blocks get flushed to fwrite frequently. We also
+     * disable stdio buffering to make fwrite errors immediate. */
     {
         int pipefd[2];
         if (pipe(pipefd) == 0) {
             close(pipefd[0]); /* Close read end to make writes fail */
             FILE *f = fdopen(pipefd[1], "wb");
             if (f) {
+                /* Disable stdio buffering so fwrite errors are immediate */
+                setvbuf(f, NULL, _IONBF, 0);
                 bz = BZ2_bzWriteOpen(&bzerr, f, 1, 0, 0);
                 if (bz) {
-                    /* Write a lot of data to overflow pipe buffer */
+                    /* Write lots of data in a loop. With unbuffered I/O
+                     * and blockSize=1, the internal fwrite at line 1014-1016
+                     * should fail once the pipe buffer fills up. */
                     char bigbuf[131072];
                     memset(bigbuf, 'X', sizeof(bigbuf));
-                    /* First write might succeed (buffered). Keep writing
-                     * until fwrite fails and sets ferror. */
-                    for (int i = 0; i < 10; i++) {
+                    for (int i = 0; i < 50; i++) {
                         BZ2_bzWrite(&bzerr, bz, bigbuf, sizeof(bigbuf));
                         if (bzerr != BZ_OK) break;
                     }
-                    /* WriteClose with abandon=1 (skip compression flush) */
+                    /* If the first writes succeeded and set ferror,
+                     * try another write to hit the ferror check at line 996 */
+                    if (bzerr == BZ_IO_ERROR) {
+                        /* bz handle still exists, write again to hit line 996 */
+                        BZ2_bzWrite(&bzerr, bz, bigbuf, 100);
+                    }
+                    /* WriteClose with abandon=1 */
                     BZ2_bzWriteClose(&bzerr, bz, 1, NULL, NULL);
                 }
                 fclose(f);
@@ -147,7 +159,93 @@ static void exercise_write_io_errors(void) {
         }
     }
 
-    /* 2. BZ2_bzWriteClose with ferror after fflush */
+    /* 1b. Same as above but with NULL bzerror to cover both bzerror branches */
+    {
+        int pipefd[2];
+        if (pipe(pipefd) == 0) {
+            close(pipefd[0]);
+            FILE *f = fdopen(pipefd[1], "wb");
+            if (f) {
+                setvbuf(f, NULL, _IONBF, 0);
+                bz = BZ2_bzWriteOpen(NULL, f, 1, 0, 0);
+                if (bz) {
+                    char bigbuf[131072];
+                    memset(bigbuf, 'X', sizeof(bigbuf));
+                    for (int i = 0; i < 50; i++) {
+                        BZ2_bzWrite(NULL, bz, bigbuf, sizeof(bigbuf));
+                    }
+                    BZ2_bzWrite(NULL, bz, bigbuf, 100);
+                    BZ2_bzWriteClose(NULL, bz, 1, NULL, NULL);
+                }
+                fclose(f);
+            } else {
+                close(pipefd[1]);
+            }
+        }
+    }
+
+    /* 2. BZ2_bzWriteClose with fwrite failure during finish loop.
+     * Write enough data to fill a block, close the read end BEFORE
+     * calling WriteClose. The finish loop calls BZ2_bzCompress(BZ_FINISH)
+     * which produces output that gets fwrite'd — this fwrite should fail.
+     * Use unbuffered I/O to make it immediate. */
+    {
+        int pipefd[2];
+        if (pipe(pipefd) == 0) {
+            FILE *f = fdopen(pipefd[1], "wb");
+            if (f) {
+                setvbuf(f, NULL, _IONBF, 0);
+                bz = BZ2_bzWriteOpen(&bzerr, f, 1, 0, 0);
+                if (bz) {
+                    /* Write enough data to create a full block.
+                     * blockSize=1 means 100KB. Write 100KB+. */
+                    char bigbuf[110000];
+                    memset(bigbuf, 'A', sizeof(bigbuf));
+                    BZ2_bzWrite(&bzerr, bz, bigbuf, sizeof(bigbuf));
+                    /* Now close read end so fwrite fails during finish */
+                    close(pipefd[0]);
+                    pipefd[0] = -1;
+                    /* WriteClose calls BZ2_bzCompress(BZ_FINISH) which
+                     * produces compressed data, then fwrite -> IO_ERROR */
+                    unsigned int in_lo, out_lo;
+                    BZ2_bzWriteClose64(&bzerr, bz, 0,
+                                       &in_lo, NULL, &out_lo, NULL);
+                }
+                fclose(f);
+            } else {
+                close(pipefd[1]);
+            }
+            if (pipefd[0] >= 0) close(pipefd[0]);
+        }
+    }
+
+    /* 2b. Same but with NULL bzerror */
+    {
+        int pipefd[2];
+        if (pipe(pipefd) == 0) {
+            FILE *f = fdopen(pipefd[1], "wb");
+            if (f) {
+                setvbuf(f, NULL, _IONBF, 0);
+                bz = BZ2_bzWriteOpen(NULL, f, 1, 0, 0);
+                if (bz) {
+                    char bigbuf[110000];
+                    memset(bigbuf, 'A', sizeof(bigbuf));
+                    BZ2_bzWrite(NULL, bz, bigbuf, sizeof(bigbuf));
+                    close(pipefd[0]);
+                    pipefd[0] = -1;
+                    BZ2_bzWriteClose64(NULL, bz, 0, NULL, NULL, NULL, NULL);
+                }
+                fclose(f);
+            } else {
+                close(pipefd[1]);
+            }
+            if (pipefd[0] >= 0) close(pipefd[0]);
+        }
+    }
+
+    /* 2c. WriteClose with ferror BEFORE the finish loop (line 1060-1061).
+     * The finish loop is skipped when ferror is set at entry.
+     * Already triggers at line 1060. Also test with fflush failing. */
     {
         int pipefd[2];
         if (pipe(pipefd) == 0) {
@@ -155,16 +253,18 @@ static void exercise_write_io_errors(void) {
             if (f) {
                 bz = BZ2_bzWriteOpen(&bzerr, f, 1, 0, 0);
                 if (bz) {
-                    /* Write some data so there's compressed output */
                     BZ2_bzWrite(&bzerr, bz, (void *)test_data,
                                 sizeof(test_data) - 1);
-                    /* Now close read end to make fflush fail */
+                    /* Close read end, then do a direct fwrite to set ferror */
                     close(pipefd[0]);
                     pipefd[0] = -1;
-                    /* WriteClose will try to flush and hit ferror */
-                    unsigned int in_lo, out_lo;
-                    BZ2_bzWriteClose64(&bzerr, bz, 0,
-                                       &in_lo, NULL, &out_lo, NULL);
+                    char junk[65536];
+                    memset(junk, 0, sizeof(junk));
+                    for (int i = 0; i < 10; i++)
+                        fwrite(junk, 1, sizeof(junk), f);
+                    /* Now ferror(f) should be true */
+                    /* WriteClose should see ferror at line 1060 */
+                    BZ2_bzWriteClose64(&bzerr, bz, 0, NULL, NULL, NULL, NULL);
                 }
                 fclose(f);
             } else {
