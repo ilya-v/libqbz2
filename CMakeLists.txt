@@ -338,6 +338,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_crc.c)
     add_test(NAME decompress_crc_tests COMMAND test_decompress_crc)
 endif()
 
+# CRC-32 internal correctness tests (PCLMULQDQ, slicing-by-8, alignment)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_crc32_internal.c)
+    add_executable(test_crc32_internal tests/test_crc32_internal.c)
+    target_include_directories(test_crc32_internal PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_crc32_internal qbz2)
+    add_test(NAME crc32_internal_tests COMMAND test_crc32_internal)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
