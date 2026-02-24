@@ -303,6 +303,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coverage_gaps.c)
     add_test(NAME coverage_gaps_tests COMMAND test_coverage_gaps)
 endif()
 
+# decompress.c branch coverage tests (GET_BITS paths, RLE decode, streaming)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_branches.c)
+    add_executable(test_decompress_branches tests/test_decompress_branches.c)
+    target_link_libraries(test_decompress_branches qbz2)
+    add_test(NAME decompress_branch_tests COMMAND test_decompress_branches)
+endif()
+
 # bzlib.c branch coverage tests (API edge cases, state machine, verbosity)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzlib_branches.c)
     add_executable(test_bzlib_branches tests/test_bzlib_branches.c)
