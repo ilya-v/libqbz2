@@ -50,15 +50,7 @@ cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE=Release \
     2>&1 | tail -3
 
-cmake --build "${BUILD_DIR}" --target qbz2 -- -j"$(nproc)" 2>&1
-
-# Build training driver
-"${CC_CMD}" -O2 ${PROF_GEN_FLAGS} \
-    -I"${SRC_DIR}/include" \
-    "${SRC_DIR}/tools/pgo_training.c" \
-    -L"${BUILD_DIR}" -lqbz2 \
-    -o "${BUILD_DIR}/pgo_training" \
-    ${PROF_GEN_FLAGS}
+cmake --build "${BUILD_DIR}" --target pgo_training -- -j"$(nproc)" 2>&1
 
 echo "Instrumented build complete."
 echo ""
