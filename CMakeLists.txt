@@ -296,6 +296,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_huffman_decode_oob.c)
     add_test(NAME huffman_decode_oob_tests COMMAND test_huffman_decode_oob)
 endif()
 
+# Branch coverage gap tests (randomised blocks, FILE* API, verbose, bzdopen, etc.)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coverage_gaps.c)
+    add_executable(test_coverage_gaps tests/test_coverage_gaps.c)
+    target_link_libraries(test_coverage_gaps qbz2)
+    add_test(NAME coverage_gaps_tests COMMAND test_coverage_gaps)
+endif()
+
+# bzlib.c branch coverage tests (API edge cases, state machine, verbosity)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bzlib_branches.c)
+    add_executable(test_bzlib_branches tests/test_bzlib_branches.c)
+    target_link_libraries(test_bzlib_branches qbz2)
+    add_test(NAME bzlib_branch_tests COMMAND test_bzlib_branches)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
