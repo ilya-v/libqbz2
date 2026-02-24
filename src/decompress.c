@@ -380,7 +380,11 @@ Int32 BZ2_decompress ( DState* s )
          );
          s->minLens[t] = minLen;
 
-         /* Build fast decode lookup table with overflow for this group */
+         /* Build fast decode lookup table with overflow for this group.
+            If the Huffman codes are degenerate (e.g. from a bit-flipped
+            stream), abandon the fast table — entries stay zero and the
+            decoder falls through to the standard slow path. This avoids
+            rejecting inputs that the reference libbz2 accepts. */
          {
             Int32 tbl_size = 1 << BZ_DECODE_TABLE_BITS;
             Int32 *tbl = &(s->decode_fast[t][0]);
@@ -407,7 +411,7 @@ Int32 BZ2_decompress ( DState* s )
                   Int32 entry = (sym_len << 16) | sym;
                   Int32 k;
                   if (base_idx < 0 || base_idx + fill_count > tbl_size)
-                     RETURN(BZ_DATA_ERROR);
+                     goto abandon_fast_table;
                   for (k = 0; k < fill_count; k++)
                      tbl[base_idx + k] = entry;
                } else {
@@ -417,7 +421,7 @@ Int32 BZ2_decompress ( DState* s )
                   Int32 suffix = code_val & ((1 << extra) - 1);
 
                   if (prefix < 0 || prefix >= tbl_size)
-                     RETURN(BZ_DATA_ERROR);
+                     goto abandon_fast_table;
 
                   /* Allocate overflow sub-table for this prefix if needed */
                   if (tbl[prefix] == 0) {
@@ -443,13 +447,13 @@ Int32 BZ2_decompress ( DState* s )
                      Int32 sub_extra = marker & 0xF;
                      Int32 sub_offset = marker >> 4;
                      Int32 pad2 = sub_extra - extra;
-                     if (pad2 < 0) RETURN(BZ_DATA_ERROR);
+                     if (pad2 < 0) goto abandon_fast_table;
                      Int32 base_idx2 = suffix << pad2;
                      Int32 fill2 = 1 << pad2;
                      Int32 ovf_entry = (sym_len << 16) | sym;
                      Int32 k;
                      if (sub_offset + base_idx2 + fill2 > 512)
-                        RETURN(BZ_DATA_ERROR);
+                        goto abandon_fast_table;
                      for (k = 0; k < fill2; k++)
                         ovf[sub_offset + base_idx2 + k] = ovf_entry;
                   }
@@ -457,6 +461,15 @@ Int32 BZ2_decompress ( DState* s )
                code_val++;
             }
             s->decode_overflow_used[t] = ovf_used;
+            goto fast_table_done;
+
+         abandon_fast_table:
+            /* Degenerate Huffman codes — clear the fast table so the
+               decoder uses the standard slow path for this group. */
+            for (pp2 = 0; pp2 < tbl_size; pp2++) tbl[pp2] = 0;
+            s->decode_overflow_used[t] = 0;
+
+         fast_table_done: ;
          }
       }
 
