@@ -24,6 +24,7 @@ set(LIB_SOURCES
     ${LIBQBZ2_SRC}/compress.c
     ${LIBQBZ2_SRC}/decompress.c
     ${LIBQBZ2_SRC}/bzlib.c
+    ${LIBQBZ2_SRC}/libsais.c
 )
 
 add_library(qbz2_fuzz STATIC ${LIB_SOURCES})
