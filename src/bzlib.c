@@ -613,7 +613,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
       UInt32       avail_out_INIT = cs_avail_out;
       Int32        s_save_nblockPP = s->save_nblock+1;
       unsigned int total_out_lo32_old;
-      const UChar* crc_pending = (const UChar*)cs_next_out;
 
       while (True) {
 
@@ -624,13 +623,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                if (c_state_out_len == 1) break;
                /* Batch output: all bytes in the run are c_state_out_ch */
                {
-                  /* Flush deferred CRC for single-byte outputs since last flush */
-                  if ((const UChar*)cs_next_out > crc_pending) {
-                     c_calculatedBlockCRC = BZ2_crc32_update(
-                        c_calculatedBlockCRC,
-                        crc_pending,
-                        (UInt32)((const UChar*)cs_next_out - crc_pending) );
-                  }
                   UInt32 n = (UInt32)c_state_out_len - 1;
                   if (n > cs_avail_out) n = cs_avail_out;
                   memset(cs_next_out, c_state_out_ch, n);
@@ -640,7 +632,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                   cs_next_out += n;
                   cs_avail_out -= n;
                   c_state_out_len -= (Int32)n;
-                  crc_pending = (const UChar*)cs_next_out;
                }
             }
             s_state_out_len_eq_one:
@@ -649,6 +640,7 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
                   c_state_out_len = 1; goto return_notr;
                };
                *( (UChar*)(cs_next_out) ) = c_state_out_ch;
+               BZ_UPDATE_CRC ( c_calculatedBlockCRC, c_state_out_ch );
                cs_next_out++;
                cs_avail_out--;
             }
@@ -683,13 +675,6 @@ Bool unRLE_obuf_to_output_FAST ( DState* s )
       }
 
       return_notr:
-      /* Flush any remaining deferred CRC bytes */
-      if ((const UChar*)cs_next_out > crc_pending) {
-         c_calculatedBlockCRC = BZ2_crc32_update(
-            c_calculatedBlockCRC,
-            crc_pending,
-            (UInt32)((const UChar*)cs_next_out - crc_pending) );
-      }
       total_out_lo32_old = s->strm->total_out_lo32;
       s->strm->total_out_lo32 += (avail_out_INIT - cs_avail_out);
       if (s->strm->total_out_lo32 < total_out_lo32_old)
