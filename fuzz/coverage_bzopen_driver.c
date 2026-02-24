@@ -663,11 +663,310 @@ static void exercise_convenience_io(void) {
     unlink(tmppath);
 }
 
+/* Exercise every error path with NULL bzerror to cover the bzerror==NULL
+ * branch in each BZ_SETERR macro expansion. Also exercise with NULL buf,
+ * negative len, and sequence errors with NULL bzerror. */
+static void exercise_null_bzerror_error_paths(void) {
+    char bz2buf[4096];
+    unsigned int bz2len = sizeof(bz2buf);
+    char buf[4096];
+
+    if (make_bz2(bz2buf, &bz2len) != BZ_OK) return;
+
+    /* --- Write API error paths with NULL bzerror --- */
+
+    /* BZ2_bzWrite: NULL buf with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            int bzerr;
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, f, 1, 0, 0);
+            if (bz) {
+                BZ2_bzWrite(NULL, bz, NULL, 10);  /* NULL buf */
+                BZ2_bzWrite(NULL, bz, (void *)test_data, -1);  /* negative len */
+                BZ2_bzWriteClose(NULL, bz, 1, NULL, NULL);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzWriteClose64: sequence error (read handle) with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len, f);
+            rewind(f);
+            int bzerr;
+            BZFILE *bz = BZ2_bzReadOpen(&bzerr, f, 0, 0, NULL, 0);
+            if (bz) {
+                /* Try WriteClose on read handle — sequence error */
+                BZ2_bzWriteClose(NULL, bz, 0, NULL, NULL);
+                BZ2_bzReadClose(&bzerr, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzWriteOpen: ferror with NULL bzerror */
+    {
+        int pipefd[2];
+        if (pipe(pipefd) == 0) {
+            close(pipefd[0]);  /* Close read end to cause write errors */
+            FILE *f = fdopen(pipefd[1], "wb");
+            if (f) {
+                /* Write enough to trigger EPIPE, then check ferror */
+                char big[65536];
+                memset(big, 'A', sizeof(big));
+                fwrite(big, 1, sizeof(big), f);
+                /* Now f has ferror set */
+                BZFILE *bz = BZ2_bzWriteOpen(NULL, f, 1, 0, 0);
+                if (bz) BZ2_bzWriteClose(NULL, bz, 1, NULL, NULL);
+                fclose(f);
+            } else {
+                close(pipefd[1]);
+            }
+        }
+    }
+
+    /* --- Read API error paths with NULL bzerror --- */
+
+    /* BZ2_bzRead: NULL buf with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len, f);
+            rewind(f);
+            int bzerr;
+            BZFILE *bz = BZ2_bzReadOpen(&bzerr, f, 0, 0, NULL, 0);
+            if (bz) {
+                BZ2_bzRead(NULL, bz, NULL, 10);  /* NULL buf */
+                BZ2_bzRead(NULL, bz, buf, -1);  /* negative len */
+                BZ2_bzRead(NULL, bz, buf, 0);  /* zero len */
+                BZ2_bzReadClose(NULL, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzRead: sequence error (write handle) with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            int bzerr;
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, f, 1, 0, 0);
+            if (bz) {
+                BZ2_bzRead(NULL, bz, buf, sizeof(buf));
+                BZ2_bzWriteClose(&bzerr, bz, 1, NULL, NULL);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzRead: data error with NULL bzerror */
+    {
+        char garbage[100];
+        memset(garbage, 0xAA, sizeof(garbage));
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(garbage, 1, sizeof(garbage), f);
+            rewind(f);
+            BZFILE *bz = BZ2_bzReadOpen(NULL, f, 0, 0, NULL, 0);
+            if (bz) {
+                BZ2_bzRead(NULL, bz, buf, sizeof(buf));
+                BZ2_bzReadClose(NULL, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzRead: truncated stream (unexpected EOF) with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len / 2, f);
+            rewind(f);
+            BZFILE *bz = BZ2_bzReadOpen(NULL, f, 0, 0, NULL, 0);
+            if (bz) {
+                BZ2_bzRead(NULL, bz, buf, sizeof(buf));
+                BZ2_bzReadClose(NULL, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzRead: successful read with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len, f);
+            rewind(f);
+            BZFILE *bz = BZ2_bzReadOpen(NULL, f, 0, 0, NULL, 0);
+            if (bz) {
+                BZ2_bzRead(NULL, bz, buf, sizeof(buf));
+                /* ReadGetUnused with NULL bzerror after stream end */
+                void *uptr; int nu;
+                BZ2_bzReadGetUnused(NULL, bz, &uptr, &nu);
+                BZ2_bzReadClose(NULL, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzRead: small output buffer (returns partial, BZ_OK) with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len, f);
+            rewind(f);
+            BZFILE *bz = BZ2_bzReadOpen(NULL, f, 0, 0, NULL, 0);
+            if (bz) {
+                char tiny[1];
+                BZ2_bzRead(NULL, bz, tiny, 1);  /* Very small buffer */
+                BZ2_bzRead(NULL, bz, buf, sizeof(buf));  /* Read rest */
+                BZ2_bzReadClose(NULL, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* --- ReadGetUnused error paths with NULL bzerror --- */
+
+    /* Not at STREAM_END */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len, f);
+            rewind(f);
+            int bzerr;
+            BZFILE *bz = BZ2_bzReadOpen(&bzerr, f, 0, 0, NULL, 0);
+            if (bz) {
+                /* Don't read — lastErr is still BZ_OK, not STREAM_END */
+                void *uptr; int nu;
+                BZ2_bzReadGetUnused(NULL, bz, &uptr, &nu);  /* sequence error */
+                BZ2_bzReadClose(&bzerr, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* NULL unused/nUnused pointers */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            fwrite(bz2buf, 1, bz2len, f);
+            rewind(f);
+            int bzerr;
+            BZFILE *bz = BZ2_bzReadOpen(&bzerr, f, 0, 0, NULL, 0);
+            if (bz) {
+                BZ2_bzRead(&bzerr, bz, buf, sizeof(buf));
+                if (bzerr == BZ_STREAM_END) {
+                    int nu;
+                    BZ2_bzReadGetUnused(NULL, bz, NULL, &nu);  /* NULL unused */
+                    void *uptr;
+                    BZ2_bzReadGetUnused(NULL, bz, &uptr, NULL);  /* NULL nUnused */
+                }
+                BZ2_bzReadClose(&bzerr, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* --- Pipe-based ferror injection with NULL bzerror --- */
+
+    /* Read from pipe that gets truncated, with NULL bzerror */
+    {
+        int pipefd[2];
+        if (pipe(pipefd) == 0) {
+            write(pipefd[1], bz2buf, bz2len / 3);
+            close(pipefd[1]);
+            FILE *f = fdopen(pipefd[0], "rb");
+            if (f) {
+                BZFILE *bz = BZ2_bzReadOpen(NULL, f, 0, 0, NULL, 0);
+                if (bz) {
+                    BZ2_bzRead(NULL, bz, buf, sizeof(buf));
+                    BZ2_bzReadClose(NULL, bz);
+                }
+                fclose(f);
+            } else {
+                close(pipefd[0]);
+            }
+        }
+    }
+
+    /* Write to broken pipe with NULL bzerror */
+    {
+        int pipefd[2];
+        if (pipe(pipefd) == 0) {
+            close(pipefd[0]);
+            FILE *f = fdopen(pipefd[1], "wb");
+            if (f) {
+                BZFILE *bz = BZ2_bzWriteOpen(NULL, f, 1, 0, 0);
+                if (bz) {
+                    char big[65536];
+                    memset(big, 'A', sizeof(big));
+                    BZ2_bzWrite(NULL, bz, big, sizeof(big));
+                    BZ2_bzWriteClose(NULL, bz, 0, NULL, NULL);
+                }
+                fclose(f);
+            } else {
+                close(pipefd[1]);
+            }
+        }
+    }
+
+    /* --- ReadClose error paths with NULL bzerror --- */
+
+    /* ReadClose on write handle with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            int bzerr;
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, f, 1, 0, 0);
+            if (bz) {
+                BZ2_bzReadClose(NULL, bz);
+            }
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzReadOpen: various param errors with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            BZ2_bzReadOpen(NULL, f, 0, 2, NULL, 0);  /* bad small */
+            BZ2_bzReadOpen(NULL, f, -1, 0, NULL, 0);  /* bad verbosity */
+            BZ2_bzReadOpen(NULL, f, 5, 0, NULL, 0);  /* bad verbosity */
+            BZ2_bzReadOpen(NULL, f, 0, 0, NULL, 1);  /* NULL unused + nUnused>0 */
+            char dummy[1] = {0};
+            BZ2_bzReadOpen(NULL, f, 0, 0, dummy, -1);  /* negative nUnused */
+            BZ2_bzReadOpen(NULL, f, 0, 0, dummy, 5001);  /* nUnused too large */
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzWriteOpen: various param errors with NULL bzerror */
+    {
+        FILE *f = tmpfile();
+        if (f) {
+            BZ2_bzWriteOpen(NULL, f, 0, 0, 0);  /* bad blockSize */
+            BZ2_bzWriteOpen(NULL, f, 10, 0, 0);  /* bad blockSize */
+            BZ2_bzWriteOpen(NULL, f, 1, -1, 0);  /* bad verbosity */
+            BZ2_bzWriteOpen(NULL, f, 1, 5, 0);  /* bad verbosity */
+            BZ2_bzWriteOpen(NULL, f, 1, 0, -1);  /* bad workFactor */
+            BZ2_bzWriteOpen(NULL, f, 1, 0, 251);  /* bad workFactor */
+            fclose(f);
+        }
+    }
+}
+
 int main(void) {
     signal(SIGPIPE, SIG_IGN);  /* Ignore SIGPIPE from broken pipes */
 
     fprintf(stderr, "Exercise NULL bzerror...\n");
     exercise_null_bzerror();
+
+    fprintf(stderr, "Exercise NULL bzerror error paths...\n");
+    exercise_null_bzerror_error_paths();
 
     fprintf(stderr, "Exercise write API...\n");
     exercise_write_api();
