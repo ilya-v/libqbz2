@@ -246,6 +246,24 @@ sys.stdout.buffer.write(text[:260000].encode() if isinstance(text, str) else tex
 
 echo "  Created $(ls "$MULTIBLOCK_DIR" | wc -l) multi-block seeds"
 
+echo "=== Integrating bzip2-tests external repository seeds ==="
+
+BZ2TESTS_DIR="$SCRIPT_DIR/../reference/bzip2-tests"
+BZIP2TESTS_SEED_DIR="$CORPUS_DIR/bzip2_tests_seeds"
+mkdir -p "$BZIP2TESTS_SEED_DIR"
+
+if [ -d "$BZ2TESTS_DIR" ]; then
+    find "$BZ2TESTS_DIR" -name '*.bz2' -type f | while read -r f; do
+        relpath="${f#$BZ2TESTS_DIR/}"
+        safename="$(echo "$relpath" | tr '/' '_')"
+        cp "$f" "$BZIP2TESTS_SEED_DIR/$safename"
+    done
+    echo "  Copied $(ls "$BZIP2TESTS_SEED_DIR" | wc -l) bzip2-tests seed files"
+else
+    echo "  WARNING: bzip2-tests repo not found at $BZ2TESTS_DIR"
+    echo "  Clone with: git clone git://sourceware.org/git/bzip2-tests.git $BZ2TESTS_DIR"
+fi
+
 echo "=== Generating coverage seeds (targeted for code path coverage) ==="
 
 COVERAGE_DIR="$CORPUS_DIR/coverage_seeds"
@@ -304,6 +322,7 @@ echo "  Decompression seeds: $(ls "$DECOMPRESS_DIR" | wc -l) files"
 echo "  Malformed seeds:     $(ls "$MALFORMED_DIR" | wc -l) files"
 echo "  Multi-block seeds:   $(ls "$MULTIBLOCK_DIR" | wc -l) files"
 echo "  Coverage seeds:      $(ls "$COVERAGE_DIR" | wc -l) files"
+echo "  bzip2-tests seeds:   $(ls "$BZIP2TESTS_SEED_DIR" 2>/dev/null | wc -l) files"
 echo "  Total:               $(find "$CORPUS_DIR" -type f | wc -l) files"
 echo "  Total size:          $(du -sh "$CORPUS_DIR" | cut -f1)"
 echo ""

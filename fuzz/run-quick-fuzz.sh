@@ -105,7 +105,7 @@ run_harness() {
             seed_dirs=("$CORPUS_DIR/compress_seeds")
             ;;
         fuzz_decompress)
-            seed_dirs=("$CORPUS_DIR/decompress_seeds" "$CORPUS_DIR/malformed_seeds")
+            seed_dirs=("$CORPUS_DIR/decompress_seeds" "$CORPUS_DIR/malformed_seeds" "$CORPUS_DIR/bzip2_tests_seeds")
             ;;
         fuzz_streaming)
             seed_dirs=("$CORPUS_DIR/compress_seeds")
@@ -114,7 +114,7 @@ run_harness() {
             seed_dirs=("$CORPUS_DIR/compress_seeds")
             ;;
         fuzz_differential|fuzz_diff_streaming)
-            seed_dirs=("$CORPUS_DIR/compress_seeds" "$CORPUS_DIR/decompress_seeds" "$CORPUS_DIR/malformed_seeds" "$CORPUS_DIR/multiblock_seeds")
+            seed_dirs=("$CORPUS_DIR/compress_seeds" "$CORPUS_DIR/decompress_seeds" "$CORPUS_DIR/malformed_seeds" "$CORPUS_DIR/multiblock_seeds" "$CORPUS_DIR/bzip2_tests_seeds")
             ;;
         *)
             seed_dirs=("$CORPUS_DIR/compress_seeds")
