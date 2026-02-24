@@ -269,6 +269,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compress_states.c)
     add_test(NAME compress_states_tests COMMAND test_compress_states)
 endif()
 
+# Huffman decode OOB regression tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_huffman_decode_oob.c)
+    add_executable(test_huffman_decode_oob tests/test_huffman_decode_oob.c)
+    target_link_libraries(test_huffman_decode_oob qbz2)
+    target_compile_definitions(test_huffman_decode_oob PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME huffman_decode_oob_tests COMMAND test_huffman_decode_oob)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
