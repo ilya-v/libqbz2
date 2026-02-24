@@ -325,6 +325,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coverage_gaps3.c)
     add_test(NAME coverage_gaps3_tests COMMAND test_coverage_gaps3)
 endif()
 
+# Coverage gap tests round 4 (randomised block tiny output, API param validation)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coverage_gaps4.c)
+    add_executable(test_coverage_gaps4 tests/test_coverage_gaps4.c)
+    target_link_libraries(test_coverage_gaps4 qbz2)
+    add_test(NAME coverage_gaps4_tests COMMAND test_coverage_gaps4)
+endif()
+
 # decompress.c branch coverage tests (GET_BITS paths, RLE decode, streaming)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_branches.c)
     add_executable(test_decompress_branches tests/test_decompress_branches.c)
