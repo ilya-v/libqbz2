@@ -291,13 +291,9 @@ The bzip2 format uses CRC-32 on every byte of input (both compression and decomp
 
 **Constraints:** bit-for-bit identical CRC output is mandatory — the hardware and software paths must agree exactly. The CRC polynomial is fixed by the bzip2 format (CRC-32/ISO-HDLC, polynomial 0x04C11DB7).
 
-### 6.5 Table-Based Huffman Encoding (Compression)
+### 6.5 Table-Based Huffman Encoding (Compression) — SATISFIED
 
-The compression path uses bit-by-bit Huffman tree encoding, which is suboptimal. The library must replace this with a **table-based Huffman encoder** that maps each symbol directly to its code and length via a lookup table, writing codes in bulk to a wide bit buffer.
-
-**Required approach:** after building the canonical Huffman code, populate a 256-entry table where `table[symbol]` stores the code bits and code length. During encoding, look up each symbol's code and length in constant time, shift it into a 64-bit accumulator, and flush full bytes to the output buffer. This eliminates per-bit branches and enables the compiler to pipeline multiple symbols.
-
-**Constraints:** the bitstream format must not change — only the internal encode implementation. Bit-for-bit identical compressed output to the reference is mandatory.
+**Status:** Already satisfied by the existing implementation. The compression encoding path uses `s->code[t][symbol]` / `s->len[t][symbol]` lookup tables with constant-time per-symbol access, an unrolled `BZ_ITAH` macro processing 50 symbols per group via table lookups, and `bsW()` writing to a 64-bit bit accumulator. The original libbz2 was already table-based on the encode side — the slow tree-walking problem only existed on the decode side (addressed in 6.2).
 
 ### 6.6 Stretch Goal: State-of-the-Art BWT Construction (libsais)
 
