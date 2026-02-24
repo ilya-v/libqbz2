@@ -303,6 +303,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coverage_gaps.c)
     add_test(NAME coverage_gaps_tests COMMAND test_coverage_gaps)
 endif()
 
+# Coverage gap tests round 2 (NULL params, state machine suspension, verbosity)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_coverage_gaps2.c)
+    add_executable(test_coverage_gaps2 tests/test_coverage_gaps2.c)
+    target_link_libraries(test_coverage_gaps2 qbz2)
+    add_test(NAME coverage_gaps2_tests COMMAND test_coverage_gaps2)
+endif()
+
 # decompress.c branch coverage tests (GET_BITS paths, RLE decode, streaming)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_branches.c)
     add_executable(test_decompress_branches tests/test_decompress_branches.c)
