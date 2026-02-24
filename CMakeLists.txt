@@ -360,6 +360,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_streaming_states.c)
     add_test(NAME streaming_state_tests COMMAND test_streaming_states)
 endif()
 
+# Legacy randomised block decompression path coverage (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_randomised_blocks.c)
+    add_executable(test_randomised_blocks tests/test_randomised_blocks.c)
+    target_link_libraries(test_randomised_blocks qbz2 dl)
+    add_test(NAME randomised_block_tests COMMAND test_randomised_blocks)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
