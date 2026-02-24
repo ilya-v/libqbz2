@@ -297,10 +297,9 @@ BZ2_hbMakeCodeLengths ( UChar*, Int32*, Int32, Int32 );
 #define BZ_X_CCRC_3      49
 #define BZ_X_CCRC_4      50
 
-/*-- Fast MTF decoder constants --*/
+/*-- Flat MTF decoder array size (one entry per unique byte value) --*/
 
-#define MTFA_SIZE 4096
-#define MTFL_SIZE 16
+#define MTFA_SIZE 256
 
 /*-- Decompression state structure --*/
 
@@ -347,7 +346,6 @@ typedef
       UChar    seqToUnseq[256];
 
       UChar    mtfa   [MTFA_SIZE];
-      Int32    mtfbase[256 / MTFL_SIZE];
       UChar    selector   [BZ_MAX_SELECTORS];
       UChar    selectorMtf[BZ_MAX_SELECTORS];
       UChar    len  [BZ_N_GROUPS][BZ_MAX_ALPHA_SIZE];
