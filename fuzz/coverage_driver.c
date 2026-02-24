@@ -359,6 +359,371 @@ static void exercise_small_buffer_decompress(const unsigned char *data, size_t s
     }
 }
 
+static void exercise_byte_at_a_time_decompress(const unsigned char *data, size_t size) {
+    /* Feed compressed input one byte at a time to exercise every GET_BITS
+     * suspend/resume path in the decompression state machine. This covers
+     * the "avail_in == 0 -> RETURN(BZ_OK)" branches in decompress.c. */
+    if (size < 4 || data[0] != 'B' || data[1] != 'Z' || data[2] != 'h') return;
+
+    for (int small = 0; small <= 1; small++) {
+        bz_stream strm;
+        memset(&strm, 0, sizeof(strm));
+        if (BZ2_bzDecompressInit(&strm, 0, small) != BZ_OK) continue;
+
+        char out[4096];
+        int ret = BZ_OK;
+        for (size_t i = 0; i < size && ret == BZ_OK; i++) {
+            strm.next_in = (char *)data + i;
+            strm.avail_in = 1;
+            do {
+                strm.next_out = out;
+                strm.avail_out = sizeof(out);
+                ret = BZ2_bzDecompress(&strm);
+            } while (ret == BZ_OK && strm.avail_in > 0);
+        }
+        BZ2_bzDecompressEnd(&strm);
+    }
+}
+
+static void exercise_byte_at_a_time_compress(const unsigned char *data, size_t size) {
+    /* Feed uncompressed input one byte at a time and drain output one byte
+     * at a time to exercise output buffer exhaustion paths in bzCompress. */
+    if (size == 0 || size > 50000) return;  /* limit for speed at -O0 */
+
+    bz_stream strm;
+    memset(&strm, 0, sizeof(strm));
+    if (BZ2_bzCompressInit(&strm, 1, 0, 0) != BZ_OK) return;
+
+    char outbyte;
+    int ret;
+    /* Feed one byte at a time with BZ_RUN */
+    for (size_t i = 0; i < size; i++) {
+        strm.next_in = (char *)data + i;
+        strm.avail_in = 1;
+        do {
+            strm.next_out = &outbyte;
+            strm.avail_out = 1;
+            ret = BZ2_bzCompress(&strm, BZ_RUN);
+        } while (ret == BZ_RUN_OK && strm.avail_in > 0);
+        if (ret != BZ_RUN_OK) break;
+    }
+    /* Finish with 1-byte output buffer */
+    if (ret == BZ_RUN_OK) {
+        strm.avail_in = 0;
+        do {
+            strm.next_out = &outbyte;
+            strm.avail_out = 1;
+            ret = BZ2_bzCompress(&strm, BZ_FINISH);
+        } while (ret == BZ_FINISH_OK);
+    }
+    BZ2_bzCompressEnd(&strm);
+}
+
+static void exercise_fileio_error_paths(void) {
+    /* Exercise FILE* API error paths: wrong-mode calls, NULL handles,
+     * parameter errors, truncated files, etc. */
+    int bzerr;
+    const char *tmppath = "/tmp/cov_errio_test.bz2";
+
+    /* BZ2_bzWriteOpen parameter errors */
+    BZ2_bzWriteOpen(&bzerr, NULL, 5, 0, 0);  /* NULL file */
+    BZ2_bzWriteOpen(NULL, NULL, 5, 0, 0);     /* NULL bzerror */
+
+    /* BZ2_bzReadOpen parameter errors */
+    BZ2_bzReadOpen(&bzerr, NULL, 0, 0, NULL, 0);  /* NULL file */
+    {
+        FILE *f = fopen("/dev/null", "rb");
+        if (f) {
+            char unused_buf[10] = {0};
+            /* invalid nUnused (negative) */
+            BZFILE *bz = BZ2_bzReadOpen(&bzerr, f, 0, 0, unused_buf, -1);
+            if (bz) BZ2_bzReadClose(&bzerr, bz);
+            /* invalid small value */
+            bz = BZ2_bzReadOpen(&bzerr, f, 0, 2, NULL, 0);
+            if (bz) BZ2_bzReadClose(&bzerr, bz);
+            /* unused != NULL but nUnused == 0 (valid) */
+            bz = BZ2_bzReadOpen(&bzerr, f, 0, 0, unused_buf, 3);
+            if (bz) BZ2_bzReadClose(&bzerr, bz);
+            fclose(f);
+        }
+    }
+
+    /* BZ2_bzRead error paths */
+    {
+        /* First create a valid bz2 file for reading */
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                char data[] = "test data for error paths coverage";
+                BZ2_bzWrite(&bzerr, bz, data, (int)sizeof(data));
+                BZ2_bzWriteClose(&bzerr, bz, 0, NULL, NULL);
+            }
+            fclose(fw);
+
+            FILE *fr = fopen(tmppath, "rb");
+            if (fr) {
+                BZFILE *bzr = BZ2_bzReadOpen(&bzerr, fr, 0, 0, NULL, 0);
+                if (bzr) {
+                    /* Read with NULL buffer */
+                    BZ2_bzRead(&bzerr, bzr, NULL, 100);
+                    /* Read with len < 0 */
+                    char buf[100];
+                    BZ2_bzRead(&bzerr, bzr, buf, -1);
+                    /* Read with len == 0 */
+                    BZ2_bzRead(&bzerr, bzr, buf, 0);
+                    /* Normal read to completion */
+                    while (bzerr == BZ_OK) {
+                        BZ2_bzRead(&bzerr, bzr, buf, sizeof(buf));
+                    }
+                    /* ReadGetUnused after stream end */
+                    void *unused_ptr;
+                    int nUnused;
+                    BZ2_bzReadGetUnused(&bzerr, bzr, &unused_ptr, &nUnused);
+                    /* ReadGetUnused with NULL params */
+                    BZ2_bzReadGetUnused(&bzerr, bzr, NULL, &nUnused);
+                    BZ2_bzReadGetUnused(&bzerr, bzr, &unused_ptr, NULL);
+                    BZ2_bzReadClose(&bzerr, bzr);
+                }
+                fclose(fr);
+            }
+        }
+        remove(tmppath);
+    }
+
+    /* BZ2_bzWrite on a read handle (sequence error) */
+    {
+        /* Write a valid bz2 file first */
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                BZ2_bzWrite(&bzerr, bz, (void*)"hello", 5);
+                BZ2_bzWriteClose(&bzerr, bz, 0, NULL, NULL);
+            }
+            fclose(fw);
+
+            /* Open for reading and try to write */
+            FILE *fr = fopen(tmppath, "rb");
+            if (fr) {
+                BZFILE *bzr = BZ2_bzReadOpen(&bzerr, fr, 0, 0, NULL, 0);
+                if (bzr) {
+                    /* Write on read handle -> sequence error */
+                    BZ2_bzWrite(&bzerr, bzr, (void*)"data", 4);
+                    BZ2_bzReadClose(&bzerr, bzr);
+                }
+                fclose(fr);
+            }
+        }
+        remove(tmppath);
+    }
+
+    /* BZ2_bzWriteClose on a read handle (sequence error) */
+    {
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                BZ2_bzWrite(&bzerr, bz, (void*)"hello", 5);
+                BZ2_bzWriteClose(&bzerr, bz, 0, NULL, NULL);
+            }
+            fclose(fw);
+
+            FILE *fr = fopen(tmppath, "rb");
+            if (fr) {
+                BZFILE *bzr = BZ2_bzReadOpen(&bzerr, fr, 0, 0, NULL, 0);
+                if (bzr) {
+                    /* WriteClose on read handle -> sequence error */
+                    BZ2_bzWriteClose(&bzerr, bzr, 0, NULL, NULL);
+                    /* Need to properly close since WriteClose failed */
+                    BZ2_bzReadClose(&bzerr, bzr);
+                }
+                fclose(fr);
+            }
+        }
+        remove(tmppath);
+    }
+
+    /* BZ2_bzReadClose on a write handle */
+    {
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                BZ2_bzRead(&bzerr, bz, (void*)"buf", 3);  /* read on write */
+                BZ2_bzReadClose(&bzerr, bz);  /* readclose on write handle */
+                /* Now the handle is leaked but we need to clean up */
+            }
+            fclose(fw);
+        }
+        remove(tmppath);
+    }
+
+    /* BZ2_bzReadGetUnused before stream end */
+    {
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                BZ2_bzWrite(&bzerr, bz, (void*)"hello world", 11);
+                BZ2_bzWriteClose(&bzerr, bz, 0, NULL, NULL);
+            }
+            fclose(fw);
+
+            FILE *fr = fopen(tmppath, "rb");
+            if (fr) {
+                BZFILE *bzr = BZ2_bzReadOpen(&bzerr, fr, 0, 0, NULL, 0);
+                if (bzr) {
+                    /* ReadGetUnused before stream end -> sequence error */
+                    void *unused_ptr;
+                    int nUnused;
+                    BZ2_bzReadGetUnused(&bzerr, bzr, &unused_ptr, &nUnused);
+                    BZ2_bzReadClose(&bzerr, bzr);
+                }
+                fclose(fr);
+            }
+        }
+        remove(tmppath);
+    }
+
+    /* Truncated bz2 file -> BZ_UNEXPECTED_EOF */
+    {
+        /* Write a valid bz2 stream, then truncate it */
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                char buf[1000];
+                memset(buf, 'A', sizeof(buf));
+                BZ2_bzWrite(&bzerr, bz, buf, sizeof(buf));
+                BZ2_bzWriteClose(&bzerr, bz, 0, NULL, NULL);
+            }
+            fclose(fw);
+
+            /* Read the file, determine its size, write a truncated version */
+            FILE *fr = fopen(tmppath, "rb");
+            if (fr) {
+                fseek(fr, 0, SEEK_END);
+                long sz = ftell(fr);
+                fseek(fr, 0, SEEK_SET);
+                char *full = malloc(sz);
+                if (full) {
+                    fread(full, 1, sz, fr);
+                    fclose(fr);
+
+                    /* Write truncated version (half the data) */
+                    const char *trunc_path = "/tmp/cov_truncated.bz2";
+                    fw = fopen(trunc_path, "wb");
+                    if (fw) {
+                        fwrite(full, 1, sz / 2, fw);
+                        fclose(fw);
+
+                        /* Try to read the truncated file -> BZ_UNEXPECTED_EOF */
+                        fr = fopen(trunc_path, "rb");
+                        if (fr) {
+                            BZFILE *bzr = BZ2_bzReadOpen(&bzerr, fr, 0, 0, NULL, 0);
+                            if (bzr) {
+                                char rbuf[4096];
+                                while (bzerr == BZ_OK) {
+                                    BZ2_bzRead(&bzerr, bzr, rbuf, sizeof(rbuf));
+                                }
+                                /* bzerr should be BZ_UNEXPECTED_EOF */
+                                BZ2_bzReadClose(&bzerr, bzr);
+                            }
+                            fclose(fr);
+                        }
+                        remove(trunc_path);
+                    }
+                    free(full);
+                } else {
+                    fclose(fr);
+                }
+            }
+        }
+        remove(tmppath);
+    }
+
+    /* BZ2_bzWriteClose with NULL bzerror */
+    {
+        FILE *fw = fopen(tmppath, "wb");
+        if (fw) {
+            BZFILE *bz = BZ2_bzWriteOpen(&bzerr, fw, 1, 0, 0);
+            if (bz) {
+                BZ2_bzWrite(&bzerr, bz, (void*)"test", 4);
+                /* Close with NULL bzerror pointer */
+                BZ2_bzWriteClose(NULL, bz, 0, NULL, NULL);
+            }
+            fclose(fw);
+        }
+        remove(tmppath);
+    }
+
+    /* BZ2_bzReadClose with NULL handle */
+    BZ2_bzReadClose(&bzerr, NULL);
+    /* BZ2_bzWriteClose with NULL handle */
+    BZ2_bzWriteClose(&bzerr, NULL, 0, NULL, NULL);
+    /* BZ2_bzReadGetUnused with NULL handle */
+    {
+        void *u; int nu;
+        BZ2_bzReadGetUnused(&bzerr, NULL, &u, &nu);
+    }
+}
+
+static void exercise_rle_run_length(void) {
+    /* Create input data that produces long RLE runs (4+ same byte repeated)
+     * to exercise the deep state_out_len >= 3 branches in both FAST and SMALL
+     * decompression paths. */
+    size_t len = 10000;
+    char *data = malloc(len);
+    if (!data) return;
+    /* Fill with repeated bytes to produce RLE runs */
+    memset(data, 'A', len);
+
+    unsigned int comp_len = (unsigned int)(len + len / 100 + 700);
+    char *comp = malloc(comp_len);
+    if (!comp) { free(data); return; }
+
+    int ret = BZ2_bzBuffToBuffCompress(comp, &comp_len, data, (unsigned int)len, 1, 0, 0);
+    if (ret == BZ_OK) {
+        /* Decompress with FAST mode */
+        unsigned int decomp_len = (unsigned int)len + 100;
+        char *decomp = malloc(decomp_len);
+        if (decomp) {
+            BZ2_bzBuffToBuffDecompress(decomp, &decomp_len, comp, comp_len, 0, 0);
+            free(decomp);
+        }
+        /* Decompress with SMALL mode */
+        decomp_len = (unsigned int)len + 100;
+        decomp = malloc(decomp_len);
+        if (decomp) {
+            BZ2_bzBuffToBuffDecompress(decomp, &decomp_len, comp, comp_len, 1, 0);
+            free(decomp);
+        }
+        /* Decompress SMALL mode with 1-byte output buffer to exercise output drain */
+        {
+            bz_stream strm;
+            memset(&strm, 0, sizeof(strm));
+            if (BZ2_bzDecompressInit(&strm, 0, 1) == BZ_OK) {
+                strm.next_in = comp;
+                strm.avail_in = comp_len;
+                char outbyte;
+                int r;
+                unsigned int total = 0;
+                do {
+                    strm.next_out = &outbyte;
+                    strm.avail_out = 1;
+                    r = BZ2_bzDecompress(&strm);
+                    total++;
+                    if (total > len + 1000) break;
+                } while (r == BZ_OK);
+                BZ2_bzDecompressEnd(&strm);
+            }
+        }
+    }
+    free(comp);
+    free(data);
+}
+
 static void exercise_param_errors(void) {
     /* Parameter validation paths — clean up after any successful init */
     bz_stream strm;
@@ -404,6 +769,8 @@ static void exercise_param_errors(void) {
 int main(int argc, char **argv) {
     exercise_param_errors();
     exercise_randomised_block();
+    exercise_fileio_error_paths();
+    exercise_rle_run_length();
 
     for (int i = 1; i < argc; i++) {
         size_t size;
@@ -414,11 +781,13 @@ int main(int argc, char **argv) {
         exercise_compress(data, size);
         exercise_streaming_compress(data, size);
         exercise_flush_path(data, size);
+        exercise_byte_at_a_time_compress(data, size);
 
         /* Try as compressed input (decompress it) */
         exercise_decompress(data, size);
         exercise_streaming_decompress(data, size);
         exercise_small_buffer_decompress(data, size);
+        exercise_byte_at_a_time_decompress(data, size);
 
         /* Exercise output buffer overflow paths */
         exercise_outbuff_full(data, size);
