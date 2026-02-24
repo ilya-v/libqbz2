@@ -6,6 +6,12 @@
 #include <dlfcn.h>
 #include "bzlib.h"
 
+/* Warn at compile time if optimization is disabled — benchmark results
+   without -O2 or higher are meaningless and should not be used. */
+#if defined(__GNUC__) && !defined(__OPTIMIZE__)
+#warning "Benchmark compiled without optimization — results will be misleading. Use -O2 or -DCMAKE_BUILD_TYPE=Release."
+#endif
+
 typedef int (*ref_B2BCompress_t)(char*, unsigned int*, char*, unsigned int, int, int, int);
 typedef int (*ref_B2BDecompress_t)(char*, unsigned int*, char*, unsigned int, int, int);
 

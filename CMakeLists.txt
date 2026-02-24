@@ -9,6 +9,14 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Default to Release build — prevents accidental unoptimized builds that
+# produce misleading benchmark results. Can be overridden with
+# -DCMAKE_BUILD_TYPE=Debug or -DCMAKE_BUILD_TYPE=RelWithDebInfo.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    message(STATUS "No build type specified — defaulting to Release")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 # Need POSIX APIs (fdopen) on strict C11
 add_compile_definitions(_POSIX_C_SOURCE=200809L)
 
@@ -367,8 +375,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_randomised_blocks.c)
     add_test(NAME randomised_block_tests COMMAND test_randomised_blocks)
 endif()
 
-# Benchmark
+# Benchmark — enforce optimization to prevent misleading results
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
     target_link_libraries(bench_throughput qbz2 dl)
+
+    # Benchmarks are meaningless without optimization. Warn loudly and
+    # force -O2 on the benchmark binary when the build type is unset or Debug.
+    if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(WARNING "Building benchmarks without optimization (CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'). "
+                        "Results will be misleading. Use -DCMAKE_BUILD_TYPE=Release for valid benchmarks.")
+        target_compile_options(bench_throughput PRIVATE -O2)
+    endif()
 endif()
