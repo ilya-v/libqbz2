@@ -3,12 +3,9 @@
  *
  * Hybrid approach:
  * - mainSort (radix + quicksort) for normal non-repetitive blocks
- * - SA-IS (O(n) suffix array via induced sorting) for repetitive blocks
- *   when the quicksort budget is exceeded
+ * - libsais SA-IS for repetitive blocks when quicksort budget is exceeded
+ *   (https://github.com/IlyaGrebnov/libsais, Apache 2.0 license)
  * - fallbackSort (exponential radix sort) for small blocks (< 10000)
- *
- * SA-IS reference: Nong, Zhang, Chan - "Two Efficient Algorithms for
- * Linear Time Suffix Array Construction" (2009)
  */
 
 #include "qbz2_internal.h"
@@ -16,501 +13,47 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*---------------------------------------------*/
-/*--- Bitvector for S/L type classification ---*/
-/*---------------------------------------------*/
-
-/* Bit = 1 means S-type, bit = 0 means L-type */
-#define BV_GET(bv,i)  (((bv)[(i)>>3] >> ((i)&7)) & 1)
-#define BV_SET(bv,i)  ((bv)[(i)>>3] |=  (unsigned char)(1 << ((i)&7)))
-#define BV_CLR(bv,i)  ((bv)[(i)>>3] &= (unsigned char)(~(1 << ((i)&7))))
-
-/* LMS (Left-Most S-type): position i > 0 where type[i]=S and type[i-1]=L */
-#define IS_LMS(bv,i)  ((i) > 0 && BV_GET(bv,i) && !BV_GET(bv,(i)-1))
-
+#include "libsais.h"
 
 /*---------------------------------------------*/
-/*--- Bucket boundary computation            ---*/
+/*--- libsais-based BWT for repetitive blocks ---*/
 /*---------------------------------------------*/
 
 /*
- * Compute bucket start or end positions from character counts.
- * Sum starts at 1 because SA[0] is always the sentinel.
- * If end=1: B[c] = one past last position in bucket c (tail pointer)
- * If end=0: B[c] = first position in bucket c (head pointer)
- */
-static void getBuckets ( const Int32 *C, Int32 *B, Int32 K, int end )
-{
-   Int32 i, sum = 1;
-   if (end) {
-      for (i = 0; i < K; i++) { sum += C[i]; B[i] = sum; }
-   } else {
-      for (i = 0; i < K; i++) { B[i] = sum; sum += C[i]; }
-   }
-}
-
-
-/*---------------------------------------------*/
-/*--- Character frequency counting           ---*/
-/*---------------------------------------------*/
-
-static void getCounts_byte ( const UChar *T, Int32 *C, Int32 n )
-{
-   Int32 i;
-   for (i = 0; i < 256; i++) C[i] = 0;
-   for (i = 0; i < n; i++) C[(Int32)T[i]]++;
-}
-
-static void getCounts_int ( const Int32 *T, Int32 *C, Int32 n, Int32 K )
-{
-   Int32 i;
-   for (i = 0; i < K; i++) C[i] = 0;
-   for (i = 0; i < n; i++) C[T[i]]++;
-}
-
-
-/*---------------------------------------------*/
-/*--- Induce L-type suffixes (byte version)  ---*/
-/*---------------------------------------------*/
-
-static void induceL_byte ( const UChar *T, Int32 *SA, const Int32 *C,
-                           Int32 *B, Int32 n, const UChar *bv )
-{
-   Int32 i, j;
-   getBuckets(C, B, 256, 0);
-   for (i = 0; i <= n; i++) {
-      j = SA[i];
-      if (j <= 0) continue;   /* skip empty (-1) and position 0 */
-      j--;
-      if (!BV_GET(bv, j)) {   /* j is L-type */
-         SA[B[(Int32)T[j]]] = j;
-         B[(Int32)T[j]]++;
-      }
-   }
-}
-
-
-/*---------------------------------------------*/
-/*--- Induce S-type suffixes (byte version)  ---*/
-/*---------------------------------------------*/
-
-static void induceS_byte ( const UChar *T, Int32 *SA, const Int32 *C,
-                           Int32 *B, Int32 n, const UChar *bv )
-{
-   Int32 i, j;
-   getBuckets(C, B, 256, 1);
-   for (i = n; i >= 0; i--) {
-      j = SA[i];
-      if (j <= 0) continue;
-      j--;
-      if (BV_GET(bv, j)) {    /* j is S-type */
-         B[(Int32)T[j]]--;
-         SA[B[(Int32)T[j]]] = j;
-      }
-   }
-}
-
-
-/*---------------------------------------------*/
-/*--- Induce L-type suffixes (int version)   ---*/
-/*---------------------------------------------*/
-
-static void induceL_int ( const Int32 *T, Int32 *SA, const Int32 *C,
-                          Int32 *B, Int32 n, Int32 K, const UChar *bv )
-{
-   Int32 i, j;
-   getBuckets(C, B, K, 0);
-   for (i = 0; i <= n; i++) {
-      j = SA[i];
-      if (j <= 0) continue;
-      j--;
-      if (!BV_GET(bv, j)) {
-         SA[B[T[j]]] = j;
-         B[T[j]]++;
-      }
-   }
-}
-
-
-/*---------------------------------------------*/
-/*--- Induce S-type suffixes (int version)   ---*/
-/*---------------------------------------------*/
-
-static void induceS_int ( const Int32 *T, Int32 *SA, const Int32 *C,
-                          Int32 *B, Int32 n, Int32 K, const UChar *bv )
-{
-   Int32 i, j;
-   getBuckets(C, B, K, 1);
-   for (i = n; i >= 0; i--) {
-      j = SA[i];
-      if (j <= 0) continue;
-      j--;
-      if (BV_GET(bv, j)) {
-         B[T[j]]--;
-         SA[B[T[j]]] = j;
-      }
-   }
-}
-
-
-/*---------------------------------------------*/
-/*--- Forward declarations                   ---*/
-/*---------------------------------------------*/
-
-static void sais_byte ( const UChar *T, Int32 *SA, Int32 n );
-static void sais_int  ( const Int32 *T, Int32 *SA, Int32 n, Int32 K );
-
-
-/*---------------------------------------------*/
-/*--- SA-IS for byte strings (first level)   ---*/
-/*---------------------------------------------*/
-
-static void sais_byte ( const UChar *T, Int32 *SA, Int32 n )
-{
-   Int32  i, j, n1, name;
-   UChar  *bv;
-   Int32  *C, *B;
-   Int32  *s1;
-   Int32  bvSize;
-
-   /* Base cases */
-   if (n <= 0) { SA[0] = 0; return; }
-   if (n == 1) { SA[0] = 1; SA[1] = 0; return; }
-
-   /* Allocate bitvector and bucket arrays */
-   bvSize = (n + 1) / 8 + 2;
-   bv = (UChar *)calloc((size_t)bvSize, 1);
-   C  = (Int32 *)malloc(256 * sizeof(Int32));
-   B  = (Int32 *)malloc(256 * sizeof(Int32));
-   if (!bv || !C || !B) {
-      free(bv); free(C); free(B);
-      return;
-   }
-
-   /* ---- Step 1: Classify S/L types ---- */
-   BV_SET(bv, n);      /* sentinel is S-type */
-   BV_CLR(bv, n - 1);  /* T[n-1] > sentinel -> L-type */
-   for (i = n - 2; i >= 0; i--) {
-      if (T[i] < T[i + 1])      BV_SET(bv, i);
-      else if (T[i] > T[i + 1]) BV_CLR(bv, i);
-      else {
-         if (BV_GET(bv, i + 1)) BV_SET(bv, i);
-         else                   BV_CLR(bv, i);
-      }
-   }
-
-   /* ---- Step 2: Get character frequencies ---- */
-   getCounts_byte(T, C, n);
-
-   /* ---- Step 3: Bucket sort LMS suffixes (approximate) ---- */
-   for (i = 0; i <= n; i++) SA[i] = -1;
-   SA[0] = n;  /* sentinel always first */
-
-   getBuckets(C, B, 256, 1);  /* tails */
-   for (i = n - 1; i >= 1; i--) {
-      if (IS_LMS(bv, i)) {
-         B[(Int32)T[i]]--;
-         SA[B[(Int32)T[i]]] = i;
-      }
-   }
-
-   /* ---- Step 4: Induce L-type ---- */
-   induceL_byte(T, SA, C, B, n, bv);
-
-   /* ---- Step 5: Induce S-type ---- */
-   induceS_byte(T, SA, C, B, n, bv);
-
-   /* ---- Step 6: Compact sorted LMS into SA[0..n1-1] ---- */
-   n1 = 0;
-   for (i = 0; i <= n; i++) {
-      if (SA[i] >= 0 && IS_LMS(bv, SA[i]))
-         SA[n1++] = SA[i];
-   }
-   /* n1 includes the sentinel (position n) which is the first LMS */
-
-   /* ---- Step 7: Name LMS substrings ---- */
-   for (i = n1; i <= n; i++) SA[i] = -1;
-
-   name = 0;
-   {
-      Int32 prev = -1;
-      for (i = 0; i < n1; i++) {
-         Int32 pos = SA[i];
-         Int32 diff = 0;
-         if (prev < 0) {
-            diff = 1;
-         } else {
-            Int32 d;
-            for (d = 0; ; d++) {
-               Int32 p1 = prev + d, p2 = pos + d;
-               Int32 c1 = (p1 >= n) ? -1 : (Int32)T[p1];
-               Int32 c2 = (p2 >= n) ? -1 : (Int32)T[p2];
-               Int32 t1 = BV_GET(bv, p1);
-               Int32 t2 = BV_GET(bv, p2);
-               if (c1 != c2 || t1 != t2) { diff = 1; break; }
-               if (d > 0) {
-                  Int32 lms1 = IS_LMS(bv, p1);
-                  Int32 lms2 = IS_LMS(bv, p2);
-                  if (lms1 || lms2) {
-                     if (!(lms1 && lms2)) diff = 1;
-                     break;
-                  }
-               }
-            }
-         }
-         if (diff) { name++; prev = pos; }
-         /* Store name at SA[n1 + pos/2] */
-         SA[n1 + (pos >> 1)] = name - 1;
-      }
-   }
-
-   /* ---- Step 8: Collect reduced string ---- */
-   /* s1 lives at the end of SA: SA[n+1-n1..n] */
-   s1 = SA + n + 1 - n1;
-   /* Scan BACKWARD to avoid overlap corruption */
-   j = n1 - 1;
-   for (i = n; i >= n1; i--) {
-      if (SA[i] >= 0)
-         s1[j--] = SA[i];
-   }
-
-   /* ---- Step 9: Recurse or direct inverse ---- */
-   if (name < n1) {
-      sais_int(s1, SA, n1 - 1, name);
-   } else {
-      for (i = 0; i < n1; i++)
-         SA[s1[i]] = i;
-   }
-
-   /* ---- Step 10: Map back to original LMS positions ---- */
-   {
-      Int32 n1_lms;
-      Int32 *buf;
-
-      /* Build LMS position list (excluding sentinel) in s1 */
-      j = 0;
-      for (i = 1; i < n; i++) {
-         if (IS_LMS(bv, i))
-            s1[j++] = i;
-      }
-      n1_lms = j;  /* should be n1 - 1 */
-
-      /* Save sorted LMS positions to temp buffer to avoid overlap issues.
-       * Recursive SA[0] = sentinel of reduced problem.
-       * SA[1..n1-1] are the non-sentinel entries giving sorted LMS order.
-       * SA[i+1] indexes into s1[0..n1_lms-1].
-       */
-      buf = (Int32 *)malloc((size_t)n1_lms * sizeof(Int32));
-      if (buf) {
-         for (i = 0; i < n1_lms; i++)
-            buf[i] = s1[SA[i + 1]];
-      }
-
-      /* ---- Step 11: Final induced sort ---- */
-      for (i = 0; i <= n; i++) SA[i] = -1;
-      SA[0] = n;  /* sentinel */
-
-      getBuckets(C, B, 256, 1);  /* tails */
-      if (buf) {
-         for (i = n1_lms - 1; i >= 0; i--) {
-            B[(Int32)T[buf[i]]]--;
-            SA[B[(Int32)T[buf[i]]]] = buf[i];
-         }
-         free(buf);
-      }
-
-      induceL_byte(T, SA, C, B, n, bv);
-      induceS_byte(T, SA, C, B, n, bv);
-   }
-
-   free(bv); free(C); free(B);
-}
-
-
-/*---------------------------------------------*/
-/*--- SA-IS for integer strings (recursive)  ---*/
-/*---------------------------------------------*/
-
-static void sais_int ( const Int32 *T, Int32 *SA, Int32 n, Int32 K )
-{
-   Int32  i, j, n1, name;
-   UChar  *bv;
-   Int32  *C, *B;
-   Int32  *s1;
-   Int32  bvSize;
-
-   /* Base cases */
-   if (n <= 0) { SA[0] = 0; return; }
-   if (n == 1) { SA[0] = 1; SA[1] = 0; return; }
-
-   /* Allocate bitvector and bucket arrays */
-   bvSize = (n + 1) / 8 + 2;
-   bv = (UChar *)calloc((size_t)bvSize, 1);
-   C  = (Int32 *)malloc((size_t)K * sizeof(Int32));
-   B  = (Int32 *)malloc((size_t)K * sizeof(Int32));
-   if (!bv || !C || !B) {
-      free(bv); free(C); free(B);
-      return;
-   }
-
-   /* ---- Step 1: Classify S/L types ---- */
-   BV_SET(bv, n);
-   BV_CLR(bv, n - 1);
-   for (i = n - 2; i >= 0; i--) {
-      if (T[i] < T[i + 1])      BV_SET(bv, i);
-      else if (T[i] > T[i + 1]) BV_CLR(bv, i);
-      else {
-         if (BV_GET(bv, i + 1)) BV_SET(bv, i);
-         else                   BV_CLR(bv, i);
-      }
-   }
-
-   /* ---- Step 2: Get character frequencies ---- */
-   getCounts_int(T, C, n, K);
-
-   /* ---- Step 3: Bucket sort LMS suffixes ---- */
-   for (i = 0; i <= n; i++) SA[i] = -1;
-   SA[0] = n;
-
-   getBuckets(C, B, K, 1);
-   for (i = n - 1; i >= 1; i--) {
-      if (IS_LMS(bv, i)) {
-         B[T[i]]--;
-         SA[B[T[i]]] = i;
-      }
-   }
-
-   /* ---- Step 4: Induce L-type ---- */
-   induceL_int(T, SA, C, B, n, K, bv);
-
-   /* ---- Step 5: Induce S-type ---- */
-   induceS_int(T, SA, C, B, n, K, bv);
-
-   /* ---- Step 6: Compact sorted LMS ---- */
-   n1 = 0;
-   for (i = 0; i <= n; i++) {
-      if (SA[i] >= 0 && IS_LMS(bv, SA[i]))
-         SA[n1++] = SA[i];
-   }
-
-   /* ---- Step 7: Name LMS substrings ---- */
-   for (i = n1; i <= n; i++) SA[i] = -1;
-
-   name = 0;
-   {
-      Int32 prev = -1;
-      for (i = 0; i < n1; i++) {
-         Int32 pos = SA[i];
-         Int32 diff = 0;
-         if (prev < 0) {
-            diff = 1;
-         } else {
-            Int32 d;
-            for (d = 0; ; d++) {
-               Int32 p1 = prev + d, p2 = pos + d;
-               Int32 c1 = (p1 >= n) ? -1 : T[p1];
-               Int32 c2 = (p2 >= n) ? -1 : T[p2];
-               Int32 t1 = BV_GET(bv, p1);
-               Int32 t2 = BV_GET(bv, p2);
-               if (c1 != c2 || t1 != t2) { diff = 1; break; }
-               if (d > 0) {
-                  Int32 lms1 = IS_LMS(bv, p1);
-                  Int32 lms2 = IS_LMS(bv, p2);
-                  if (lms1 || lms2) {
-                     if (!(lms1 && lms2)) diff = 1;
-                     break;
-                  }
-               }
-            }
-         }
-         if (diff) { name++; prev = pos; }
-         SA[n1 + (pos >> 1)] = name - 1;
-      }
-   }
-
-   /* ---- Step 8: Collect reduced string ---- */
-   s1 = SA + n + 1 - n1;
-   /* Scan BACKWARD to avoid overlap corruption */
-   j = n1 - 1;
-   for (i = n; i >= n1; i--) {
-      if (SA[i] >= 0)
-         s1[j--] = SA[i];
-   }
-
-   /* ---- Step 9: Recurse or direct inverse ---- */
-   if (name < n1) {
-      sais_int(s1, SA, n1 - 1, name);
-   } else {
-      for (i = 0; i < n1; i++)
-         SA[s1[i]] = i;
-   }
-
-   /* ---- Step 10: Map back and final induced sort ---- */
-   {
-      Int32 n1_lms;
-      Int32 *buf;
-
-      j = 0;
-      for (i = 1; i < n; i++) {
-         if (IS_LMS(bv, i))
-            s1[j++] = i;
-      }
-      n1_lms = j;
-
-      buf = (Int32 *)malloc((size_t)n1_lms * sizeof(Int32));
-      if (buf) {
-         for (i = 0; i < n1_lms; i++)
-            buf[i] = s1[SA[i + 1]];
-      }
-
-      /* ---- Step 11: Final induced sort ---- */
-      for (i = 0; i <= n; i++) SA[i] = -1;
-      SA[0] = n;
-
-      getBuckets(C, B, K, 1);
-      if (buf) {
-         for (i = n1_lms - 1; i >= 0; i--) {
-            B[T[buf[i]]]--;
-            SA[B[T[buf[i]]]] = buf[i];
-         }
-         free(buf);
-      }
-
-      induceL_int(T, SA, C, B, n, K, bv);
-      induceS_int(T, SA, C, B, n, K, bv);
-   }
-
-   free(bv); free(C); free(B);
-}
-
-/*---------------------------------------------*/
-/*--- SA-IS based BWT for repetitive blocks  ---*/
-/*---------------------------------------------*/
-
-/*
- * Compute BWT using SA-IS on doubled string T+T.
- * This correctly handles circular rotations by computing
- * the suffix array of T+T and filtering entries < nblock.
- * Used as fallback when mainSort budget is exceeded.
+ * Compute the BWT of a block using libsais for suffix array construction.
+ * Uses the doubled-string technique to compute cyclic rotation sort:
+ *   1. Concatenate block with itself: T' = T || T  (length 2n)
+ *   2. Build suffix array of T' using libsais
+ *   3. Filter SA entries where SA[i] < n (these correspond to cyclic rotations)
+ *   4. Extract origPtr (position where SA[i] == 0)
+ *
+ * This produces the exact same BWT as bzip2's reference implementation.
  */
 static void sais_bwt ( UChar* block, UInt32* ptr, Int32 nblock, Int32* origPtr )
 {
    UChar  *doubled;
-   Int32  *SA;
+   int32_t *SA;
    Int32  dlen, i, j;
 
    dlen = 2 * nblock;
    doubled = (UChar *)malloc((size_t)dlen);
-   SA = (Int32 *)malloc(((size_t)dlen + 1) * sizeof(Int32));
+   SA = (int32_t *)malloc((size_t)dlen * sizeof(int32_t));
    if (!doubled || !SA) { free(doubled); free(SA); return; }
 
    memcpy(doubled, block, (size_t)nblock);
    memcpy(doubled + nblock, block, (size_t)nblock);
-   sais_byte(doubled, SA, dlen);
+
+   /* libsais builds SA[0..dlen-1] with no sentinel slot */
+   if (libsais(doubled, SA, (int32_t)dlen, 0, NULL) != 0) {
+      /* SA construction failed -- fall through with origPtr = -1 */
+      free(doubled);
+      free(SA);
+      return;
+   }
 
    *origPtr = -1;
    j = 0;
-   for (i = 1; i <= dlen; i++) {
+   for (i = 0; i < dlen; i++) {
       if (SA[i] < nblock) {
          ptr[j] = (UInt32)SA[i];
          if (SA[i] == 0) *origPtr = j;
@@ -520,6 +63,7 @@ static void sais_bwt ( UChar* block, UInt32* ptr, Int32 nblock, Int32* origPtr )
    free(doubled);
    free(SA);
 }
+
 
 
 /*---------------------------------------------*/

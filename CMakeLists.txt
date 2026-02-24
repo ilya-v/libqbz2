@@ -25,6 +25,7 @@ set(LIBQBZ2_SOURCES
     src/crc32_pclmul.c
     src/decompress.c
     src/huffman.c
+    src/libsais.c
     src/randtable.c
 )
 
