@@ -375,6 +375,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_randomised_blocks.c)
     add_test(NAME randomised_block_tests COMMAND test_randomised_blocks)
 endif()
 
+# Differential error code comparison (uses dlopen for reference)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_diff_error_codes.c)
+    add_executable(test_diff_error_codes tests/test_diff_error_codes.c)
+    target_link_libraries(test_diff_error_codes qbz2 dl)
+    add_test(NAME diff_error_code_tests COMMAND test_diff_error_codes)
+endif()
+
 # Benchmark — enforce optimization to prevent misleading results
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
