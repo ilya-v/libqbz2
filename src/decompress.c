@@ -406,6 +406,8 @@ Int32 BZ2_decompress ( DState* s )
                   Int32 fill_count = 1 << pad;
                   Int32 entry = (sym_len << 16) | sym;
                   Int32 k;
+                  if (base_idx < 0 || base_idx + fill_count > tbl_size)
+                     RETURN(BZ_DATA_ERROR);
                   for (k = 0; k < fill_count; k++)
                      tbl[base_idx + k] = entry;
                } else {
@@ -413,6 +415,9 @@ Int32 BZ2_decompress ( DState* s )
                   Int32 prefix = code_val >> (sym_len - BZ_DECODE_TABLE_BITS);
                   Int32 extra = sym_len - BZ_DECODE_TABLE_BITS;
                   Int32 suffix = code_val & ((1 << extra) - 1);
+
+                  if (prefix < 0 || prefix >= tbl_size)
+                     RETURN(BZ_DATA_ERROR);
 
                   /* Allocate overflow sub-table for this prefix if needed */
                   if (tbl[prefix] == 0) {
@@ -438,10 +443,13 @@ Int32 BZ2_decompress ( DState* s )
                      Int32 sub_extra = marker & 0xF;
                      Int32 sub_offset = marker >> 4;
                      Int32 pad2 = sub_extra - extra;
+                     if (pad2 < 0) RETURN(BZ_DATA_ERROR);
                      Int32 base_idx2 = suffix << pad2;
                      Int32 fill2 = 1 << pad2;
                      Int32 ovf_entry = (sym_len << 16) | sym;
                      Int32 k;
+                     if (sub_offset + base_idx2 + fill2 > 512)
+                        RETURN(BZ_DATA_ERROR);
                      for (k = 0; k < fill2; k++)
                         ovf[sub_offset + base_idx2 + k] = ovf_entry;
                   }
