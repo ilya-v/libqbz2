@@ -331,6 +331,13 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compress_branches.c)
     add_test(NAME compress_branch_tests COMMAND test_compress_branches)
 endif()
 
+# Decompression CRC correctness tests (streaming output buffer boundaries)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_decompress_crc.c)
+    add_executable(test_decompress_crc tests/test_decompress_crc.c)
+    target_link_libraries(test_decompress_crc qbz2 dl)
+    add_test(NAME decompress_crc_tests COMMAND test_decompress_crc)
+endif()
+
 # Benchmark
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench.c)
     add_executable(bench_throughput bench/bench.c)
