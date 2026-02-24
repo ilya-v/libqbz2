@@ -12,12 +12,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Need POSIX APIs (fdopen) on strict C11
 add_compile_definitions(_POSIX_C_SOURCE=200809L)
 
+# Hardware CRC-32 acceleration via PCLMULQDQ (build-time detection)
+include(CheckCCompilerFlag)
+check_c_compiler_flag("-mpclmul -msse4.2" HAVE_PCLMUL)
+
 # Library source files
 set(LIBQBZ2_SOURCES
     src/blocksort.c
     src/bzlib.c
     src/compress.c
     src/crctable.c
+    src/crc32_pclmul.c
     src/decompress.c
     src/huffman.c
     src/randtable.c
@@ -38,6 +43,12 @@ target_include_directories(qbz2
 target_compile_options(qbz2 PRIVATE
     -Wall -Wextra -Wpedantic
 )
+
+# Enable PCLMULQDQ hardware CRC if supported
+if(HAVE_PCLMUL)
+    set_source_files_properties(src/crc32_pclmul.c src/crctable.c
+        PROPERTIES COMPILE_FLAGS "-mpclmul -msse4.2 -mssse3")
+endif()
 
 # Shared library
 add_library(qbz2_shared SHARED ${LIBQBZ2_SOURCES})

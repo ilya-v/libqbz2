@@ -623,11 +623,23 @@ static const UInt32 crc32_s8[8][256] = {
 
 
 /*
- * Compute CRC32 over a buffer using slicing-by-8.
- * Processes 8 bytes per iteration in the main loop.
+ * Hardware-accelerated CRC-32 using PCLMULQDQ (when available).
+ * Defined in crc32_pclmul.c, compiled only when __PCLMUL__ is set.
+ */
+#ifdef __PCLMUL__
+extern uint32_t crc32_pclmul(uint32_t crc, const uint8_t *buf, uint32_t len);
+#endif
+
+/*
+ * Compute CRC32 over a buffer. Uses PCLMULQDQ hardware acceleration
+ * for buffers >= 64 bytes when available, falling back to slicing-by-8.
  */
 UInt32 BZ2_crc32_update ( UInt32 crc, const UChar* buf, UInt32 len )
 {
+#ifdef __PCLMUL__
+   if (len >= 64)
+      return (UInt32)crc32_pclmul((uint32_t)crc, (const uint8_t *)buf, (uint32_t)len);
+#endif
    const UChar* p = buf;
    const UChar* end = buf + len;
 
